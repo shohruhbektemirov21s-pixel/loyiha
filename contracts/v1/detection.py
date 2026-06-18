@@ -53,6 +53,16 @@ class Detection(StrictModel):
         default=None,
         description="Cropped region image for the VLM to inspect. Recommended; avoids re-cropping downstream.",
     )
+    # First-class, typed calibration flag. Previously this lived as the string
+    # "true"/"false" inside `attributes` (stringly-typed, easy to misread); it is
+    # now a real bool. The detector adapter populates it; consumers (the state
+    # machine, the console) read `det.calibrated` directly. Defaults False so an
+    # older producer that only sets attributes still validates — the state
+    # machine keeps the attributes fallback for that case.
+    calibrated: bool = Field(
+        default=False,
+        description="True iff `score` was produced by a fitted calibrator (Platt), not the raw model output.",
+    )
     attributes: dict[str, str] = Field(
         default_factory=dict,
         description="Optional detector hints, e.g. {'mean_density':'high','material':'organic'} from dual-energy.",

@@ -150,5 +150,4 @@ export const MOCK_SCANS: ScanRecord[] = [
   },
 ];
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export const IS_MOCK = (import.meta as any).env?.VITE_MOCK === "true";
+export const IS_MOCK = import.meta.env.VITE_MOCK === "true";

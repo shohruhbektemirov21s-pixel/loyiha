@@ -14,6 +14,19 @@ import {
   THREAT_CATEGORY, IMAGE_MODALITY, SCAN_SUBJECT,
 } from "../lib/uz";
 
+// Category danger ranking — most dangerous first when sorting detections.
+const CATEGORY_SEVERITY: Record<ThreatCategory, number> = {
+  explosive:        100,
+  firearm:           90,
+  bladed_weapon:     80,
+  narcotics:         70,
+  contraband_other:  50,
+  currency:          40,
+  metallic_anomaly:  30,
+  organic_anomaly:   20,
+  unknown:           10,
+};
+
 // ------------------------------------------------------------------
 // Per-detection local judgement state
 // ------------------------------------------------------------------
@@ -40,8 +53,15 @@ export function VerdictPanel({
   const verd   = scan.verdict;
   const frames = det?.frames ?? [];
   const frame  = frames[frameIdx] ?? null;
-  const detections: Detection[] = det?.detections ?? [];
   const analyzing = scan.state === "analyzing";
+
+  // Show the most dangerous detections first: by category severity, then by
+  // detector score. (The raw AI order is not risk-prioritised.)
+  const detections: Detection[] = [...(det?.detections ?? [])].sort((a, b) => {
+    const sevDiff = CATEGORY_SEVERITY[b.category] - CATEGORY_SEVERITY[a.category];
+    if (sevDiff !== 0) return sevDiff;
+    return b.score - a.score;
+  });
 
   // Map detections → verdict rationale
   const verdictMap = Object.fromEntries(

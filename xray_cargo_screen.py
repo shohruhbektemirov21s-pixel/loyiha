@@ -1,9 +1,26 @@
 """Customs cargo X-ray screening with Qwen3-VL (Uzbek output).
 
+  ⚠️  DEMO / PROTOTYPE — NOT PRODUCTION.  ⚠️
+  This standalone script is a quick local harness for eyeballing what a 4B VLM
+  says about a folder of X-ray JPEGs. It does NOT go through the production
+  pipeline (contracts.v1 / detector / vlm.generator) and its flags MUST NOT be
+  used to clear or hold real cargo. The production path computes the risk band
+  deterministically from a trained detector and uses the VLM only for Uzbek
+  TEXT, never for the BOR/SHUBHALI/YO'Q decision. See vlm/generator.py.
+
 Runs the local Ollama qwen3-vl model over railway-wagon X-ray scans and produces
 a STRUCTURED Uzbek screening report per image:
   wagon type, main cargo, and per-class contraband flags (narcotics / weapon /
   tobacco / other) as BOR / SHUBHALI / YO'Q, plus an overall risk band.
+
+Design rule even for the demo: the VLM is a DESCRIBER, not a decider.
+  * The model's per-class strings are treated as advisory TEXT only.
+  * The operator-facing flag is computed CONSERVATIVELY by us, not copied from
+    the model: any non-YO'Q signal (including a malformed/empty answer) flags the
+    image for human review. The model can only ESCALATE, never clear.
+  * Every free-text field is passed through vlm.guard.LanguageGuard so a Cyrillic
+    drift, a homoglyph, or a forbidden "let it pass" phrase is caught and the
+    image is flagged for review rather than silently trusted.
 
 Engineering notes (honest limits of a 4B VLM on single-energy X-ray):
   * The model reliably reads COARSE content (wagon type, main cargo).
@@ -19,6 +36,8 @@ Usage:
 """
 from __future__ import annotations
 import base64, glob, json, os, sys, time, urllib.request
+
+from vlm.guard import get_guard
 
 OLLAMA = os.environ.get("XRAY_VLM_BASE_URL", "http://127.0.0.1:11434")
 MODEL  = os.environ.get("XRAY_VLM_MODEL", "qwen3-vl:4b")
@@ -62,6 +81,10 @@ def screen(path: str) -> tuple[str, float]:
         headers={"Content-Type": "application/json"}), timeout=400)
     return json.loads(r.read())["message"]["content"].strip(), time.time() - t
 
+_CONTRABAND_KEYS = ("QORADORI", "QUROL", "TAMAKI", "BOSHQA")
+_GUARD = get_guard()
+
+
 def parse(text: str) -> dict:
     out = {}
     for line in text.splitlines():
@@ -72,6 +95,43 @@ def parse(text: str) -> dict:
                 out[k] = v.strip()
     return out
 
+
+def decide_flag(raw: str, d: dict) -> tuple[bool, str]:
+    """Conservative flag — the model can only ESCALATE, never clear.
+
+    Returns (flagged, reason). The image is flagged for human review when ANY of:
+      * the structured answer is missing required fields (model failed to follow
+        the format → we cannot trust a "clean" read, so we escalate);
+      * any contraband field is not an explicit YO'Q;
+      * the guard rejects the free-text (Cyrillic/homoglyph/forbidden clearance).
+    We never copy a "clean" verdict from the model; absence of a YO'Q is treated
+    as a hit, not as a pass.
+    """
+    # 1. Format completeness — a malformed answer is not a clean answer.
+    missing = [k for k in _CONTRABAND_KEYS if k not in d]
+    if missing:
+        return True, f"to'liqsiz javob (yo'q maydonlar: {','.join(missing)})"
+
+    # 2. Any non-YO'Q contraband signal flags. "Absence of YO'Q" == escalate.
+    hits = [k for k in _CONTRABAND_KEYS
+            if not d.get(k, "").strip().upper().startswith("YO")]
+    if hits:
+        return True, "kontrabanda belgisi: " + ",".join(hits)
+
+    # 3. Language/safety guard over the model's own free text. A drift or a
+    #    forbidden "let it pass" phrase means the output is untrustworthy →
+    #    escalate to a human rather than trust the YO'Q values above.
+    for field in (raw, d.get("ASOSIY_YUK", ""), d.get("VAGON_TURI", "")):
+        if not field.strip():
+            continue
+        res = _GUARD.check(field)
+        if not res.passed:
+            v = res.first_violation()
+            kind = v.kind.value if v else "nomalum"
+            return True, f"guard rad etdi: {kind}"
+
+    return False, "model belgisi yo'q (lekin bu DEMO — tasdiqlash uchun emas)"
+
 def main():
     folder = sys.argv[1] if len(sys.argv) > 1 else "/home/kali/Рабочий стол/kas"
     images = sorted(glob.glob(os.path.join(folder, "*.jpg")) + glob.glob(os.path.join(folder, "*.png")))
@@ -81,12 +141,12 @@ def main():
     for i, p in enumerate(images, 1):
         raw, dt = screen(p)
         d = parse(raw)
-        hit = any(d.get(c, "YO'Q").upper().startswith(("BOR", "SHUBHALI"))
-                  for c in ("QORADORI", "QUROL", "TAMAKI", "BOSHQA"))
+        hit, reason = decide_flag(raw, d)
         flagged += hit
-        rows.append({"image": os.path.basename(p), "seconds": round(dt, 1), **d, "raw": raw})
+        rows.append({"image": os.path.basename(p), "seconds": round(dt, 1),
+                     "flagged": hit, "flag_reason": reason, **d, "raw": raw})
         mark = "⚠️ " if hit else "✓ "
-        print(f"{mark}[{i}/{len(images)}] {os.path.basename(p)}  ({dt:.0f}s)")
+        print(f"{mark}[{i}/{len(images)}] {os.path.basename(p)}  ({dt:.0f}s)  {reason}")
         print(f"    vagon={d.get('VAGON_TURI','?')} | yuk={d.get('ASOSIY_YUK','?')} | "
               f"qoradori={d.get('QORADORI','?')} qurol={d.get('QUROL','?')} "
               f"tamaki={d.get('TAMAKI','?')} boshqa={d.get('BOSHQA','?')} | xavf={d.get('XAVF','?')}")

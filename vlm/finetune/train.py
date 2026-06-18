@@ -27,9 +27,16 @@ Serve the adapter:
 LoRA choices rationale:
   - r=16, alpha=32: standard starting point for task-specific adaptation.
   - Target modules: Q/K/V/O projections + MLP gate/up/down; covers the
-    language head where Uzbek drift occurs without touching the vision tower.
-  - Vision tower is frozen: we are not improving visual understanding, only
-    the Uzbek slot-filling language output.
+    language head where Uzbek drift occurs without touching the vision encoder.
+  - Vision ENCODER is always frozen: we are not improving raw visual
+    understanding, only the Uzbek slot-filling language output. Because the
+    encoder is untouched, in DESCRIBE mode do NOT trust the model's free-text as
+    visual evidence — it restyles language, it does not see better. The risk
+    decision must stay on the calibrated detector score (see vlm/generator.py).
+  - Optional --train-connector ALSO LoRA-adapts the vision->text connector/merger
+    (encoder still frozen) so the new Uzbek text stays anchored to the visual
+    features. Use it only with enough data; it overfits the small connector on
+    tiny sets.
   - QLoRA (4-bit NF4) for the 4B model: fits in 12 GB VRAM with room for
     the KV cache. For 8B/32B, use full LoRA (BF16 base).
   - Max sequence length 2048: covers SYSTEM + user prompt + crop token budget.
@@ -76,13 +83,27 @@ class TrainConfig:
     seed: int = 42
     # Air-gap flags: disable all telemetry and HF calls
     hf_offline: bool = True
+    # When True, ALSO apply LoRA to the vision->text connector/merger so the
+    # adapter can re-ground the Uzbek text in the visual features (not just
+    # re-style language). The vision *encoder* stays frozen either way — we never
+    # claim to improve raw visual understanding. Default False keeps the
+    # conservative language-only adaptation; turn on only with enough data
+    # (>= ~500 examples) or it overfits the small connector.
+    train_connector: bool = False
 
 
-# LoRA target modules for Qwen3-VL (language head only; vision tower frozen).
+# LoRA target modules for Qwen3-VL.
+# Language head only — Q/K/V/O + MLP, where Uzbek drift lives. The vision
+# ENCODER is never adapted here.
 _LORA_TARGET_MODULES = [
     "q_proj", "k_proj", "v_proj", "o_proj",
     "gate_proj", "up_proj", "down_proj",
 ]
+# The vision->text connector/merger projection. Optional (cfg.train_connector):
+# adapting it lets the language head's new Uzbek output stay anchored to the
+# visual evidence instead of free-styling. Qwen-VL names these "merger"/"mlp"
+# inside the merger; we target the linear projections by their leaf names.
+_LORA_CONNECTOR_MODULES = ["mlp.0", "mlp.2"]
 
 
 def _sha256_file(path: str) -> str:
@@ -139,10 +160,14 @@ def run_training(cfg: TrainConfig) -> None:
         load_kwargs["quantization_config"] = bnb_config
         log.info("QLoRA: 4-bit NF4 quantization enabled.")
 
-    # Import Qwen3-VL-specific model class.
+    # Load through the UNIVERSAL image-text-to-text auto class. The base is
+    # Qwen3-VL; the old hard-coded ``Qwen2_5_VLForConditionalGeneration`` is the
+    # wrong architecture and would mis-map weights. ``AutoModelForImageTextToText``
+    # resolves the right class from the model config. Older transformers without
+    # it fall back to the generic causal-LM auto class.
     try:
-        from transformers import Qwen2_5_VLForConditionalGeneration as QwenVLModel
-    except ImportError:
+        from transformers import AutoModelForImageTextToText as QwenVLModel
+    except ImportError:  # transformers < 4.49
         from transformers import AutoModelForCausalLM as QwenVLModel  # type: ignore
 
     log.info("Loading model: %s", cfg.model_name)
@@ -152,19 +177,37 @@ def run_training(cfg: TrainConfig) -> None:
     if cfg.qlora:
         model = prepare_model_for_kbit_training(model)
 
-    # Freeze the vision tower: we only adapt the language head.
+    # Freeze the vision ENCODER. We only adapt the language head (and, optionally,
+    # the vision->text connector/merger — never the encoder itself). The
+    # connector is part of the "vision" namespace in Qwen-VL, so when
+    # train_connector is on we must NOT blanket-freeze everything matching
+    # "vision"/"visual"; PEFT will re-enable grads on the LoRA-wrapped connector
+    # projections, but we still freeze the heavy encoder blocks explicitly.
+    _ENCODER_HINTS = ("patch_embed", "blocks", "attn", "vision_model", "vision_tower")
     for name, param in model.named_parameters():
-        if "visual" in name or "vision" in name:
-            param.requires_grad = False
-    log.info("Vision tower frozen; training language head only.")
+        is_vision = ("visual" in name) or ("vision" in name)
+        if not is_vision:
+            continue
+        is_connector = ("merger" in name) or ("mlp" in name and "blocks" not in name)
+        if cfg.train_connector and is_connector:
+            continue  # leave trainable; LoRA will wrap these
+        param.requires_grad = False
+    log.info(
+        "Vision encoder frozen; training language head%s.",
+        " + vision->text connector" if cfg.train_connector else " only",
+    )
 
     # -- LoRA config -------------------------------------------------------
+    target_modules = list(_LORA_TARGET_MODULES)
+    if cfg.train_connector:
+        target_modules += _LORA_CONNECTOR_MODULES
+        log.info("LoRA also targets connector modules: %s", _LORA_CONNECTOR_MODULES)
     peft_cfg = LoraConfig(
         task_type=TaskType.CAUSAL_LM,
         r=cfg.lora_r,
         lora_alpha=cfg.lora_alpha,
         lora_dropout=cfg.lora_dropout,
-        target_modules=_LORA_TARGET_MODULES,
+        target_modules=target_modules,
         bias="none",
     )
     model = get_peft_model(model, peft_cfg)
@@ -249,6 +292,9 @@ def main() -> None:
     parser.add_argument("--lora-r",  type=int, default=16)
     parser.add_argument("--qlora",   action="store_true", help="Enable 4-bit NF4 QLoRA")
     parser.add_argument("--no-bf16", action="store_true")
+    parser.add_argument("--train-connector", action="store_true",
+                        help="Also LoRA the vision->text connector/merger "
+                             "(vision encoder stays frozen). Needs more data.")
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -263,6 +309,7 @@ def main() -> None:
         lora_r=args.lora_r,
         qlora=args.qlora,
         bf16=not args.no_bf16,
+        train_connector=args.train_connector,
     )
     run_training(cfg)
 

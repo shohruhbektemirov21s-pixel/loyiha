@@ -203,6 +203,15 @@ export function clearToken(): void {
   sessionStorage.removeItem(TOKEN_KEY);
 }
 
+// Broadcast that the session is no longer valid. The App listens for this and
+// returns to the login screen — WITHOUT reloading the page (a reload on every
+// 401 creates an infinite loop when the stored token is stale).
+export const AUTH_EXPIRED_EVENT = "xray:auth-expired";
+export function notifyAuthExpired(): void {
+  clearToken();
+  window.dispatchEvent(new CustomEvent(AUTH_EXPIRED_EVENT));
+}
+
 // ---------------------------------------------------------------------------
 // Core fetch wrapper
 // ---------------------------------------------------------------------------
@@ -231,8 +240,7 @@ async function request<T>(
   const res = await fetch(`${BASE}${path}`, { ...options, headers });
 
   if (res.status === 401) {
-    clearToken();
-    window.location.reload();
+    notifyAuthExpired();
     throw new ApiError(401, "Sessiya tugadi. Qayta kiring.");
   }
 
@@ -317,6 +325,45 @@ export interface CaptureResult {
 
 export async function captureCamera(): Promise<CaptureResult> {
   return request<CaptureResult>("/camera/capture", { method: "POST" });
+}
+
+// ---------------------------------------------------------------------------
+// Live camera stream (continuous MJPEG preview + analysis)
+// ---------------------------------------------------------------------------
+export interface CameraStreamStatus {
+  running:           boolean;
+  device:            string | null;
+  cadence_s:        number | null;
+  last_analysis_ts: string | null;
+  frames_analyzed:  number;
+}
+
+// Authenticated <img> src for the live MJPEG preview.
+export function cameraLiveUrl(): string {
+  const token = loadToken();
+  const qs = token ? `?token=${encodeURIComponent(token)}` : "";
+  return `${BASE}/camera/live.mjpg${qs}`;
+}
+
+export async function startCameraStream(opts?: {
+  device?: string;
+  cadence_s?: number;
+}): Promise<CameraStreamStatus> {
+  return request<CameraStreamStatus>("/camera/stream/start", {
+    method: "POST",
+    body: JSON.stringify({
+      device:    opts?.device ?? null,
+      cadence_s: opts?.cadence_s ?? null,
+    }),
+  });
+}
+
+export async function stopCameraStream(): Promise<CameraStreamStatus> {
+  return request<CameraStreamStatus>("/camera/stream/stop", { method: "POST" });
+}
+
+export async function getCameraStreamStatus(): Promise<CameraStreamStatus> {
+  return request<CameraStreamStatus>("/camera/stream/status");
 }
 
 // ---------------------------------------------------------------------------

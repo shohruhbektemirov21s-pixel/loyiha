@@ -1,4 +1,4 @@
-import { AlertTriangle, Info, CheckCircle2, X } from "lucide-react";
+import { ShieldAlert, AlertTriangle, Info, CheckCircle2, X } from "lucide-react";
 import type { RiskBand } from "../lib/types";
 import { RISK_BAND, CLEAR_DISCLAIMER, SR_CLOSE } from "../lib/uz";
 
@@ -15,7 +15,9 @@ const CONFIG: Record<RiskBand, {
   title: string;
 }> = {
   high: {
-    icon:  <AlertTriangle size={20} aria-hidden="true" />,
+    // Distinct shield icon — high is visually different from medium, not
+    // colour-only (color-blind safe).
+    icon:  <ShieldAlert size={20} aria-hidden="true" />,
     outer: "border-risk-high-border bg-risk-high-bg",
     inner: "text-risk-high-text",
     title: RISK_BAND.high,
@@ -59,7 +61,7 @@ export function AlertBanner({ risk, summaryUz, onDismiss }: Props) {
           </p>
         )}
         {risk === "clear" && (
-          <p className="mt-1 text-xs text-content-muted leading-relaxed italic">
+          <p className="mt-1 text-sm text-content-muted leading-relaxed italic">
             {CLEAR_DISCLAIMER}
           </p>
         )}

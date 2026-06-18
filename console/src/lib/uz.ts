@@ -77,7 +77,7 @@ export const CLEAR_DISCLAIMER =
 // ---------------------------------------------------------------------------
 export const THREAT_CATEGORY: Record<ThreatCategory, string> = {
   narcotics:        "Giyohvand modda",
-  firearm:          "O'q-yoy qurol",
+  firearm:          "O'qotar qurol",
   bladed_weapon:    "Pichoq / o'tkir buyum",
   explosive:        "Portlovchi modda",
   currency:         "Valyuta / pul",
@@ -124,7 +124,7 @@ export const VIEWER_ZOOM_IN         = "Kattalashtirish";
 export const VIEWER_ZOOM_OUT        = "Kichiklashtirish";
 export const VIEWER_ZOOM_RESET      = "Asl o'lcham";
 export const VIEWER_DRAW_MODE       = "Belgilash rejimi";
-export const VIEWER_DRAW_HINT       = "O'tkazib yuborilgan buyumni belgilang";
+export const VIEWER_DRAW_HINT       = "Detektor o'tkazib yuborgan buyumni belgilang";
 export const VIEWER_DRAW_CANCEL     = "Bekor qilish";
 export const VIEWER_ANALYZING_OVERLAY = "Tahlil qilinmoqda…";
 
@@ -260,3 +260,65 @@ export const SR_SELECTED        = "Tanlangan";
 export const SR_RISK_HIGH       = "Diqqat: yuqori xavf darajasi aniqlandi";
 export const SR_NEW_SCAN        = "Yangi skan keldi";
 export const SR_DECISION_LOGGED = "Qaror jurnalga yozildi";
+
+// ---------------------------------------------------------------------------
+// Connection status indicator
+// ---------------------------------------------------------------------------
+export const CONN_OPEN         = "Ulangan";
+export const CONN_CONNECTING   = "Ulanmoqda…";
+export const CONN_CLOSED       = "Aloqa uzildi";
+export const CONN_CLOSED_HINT  =
+  "Server bilan aloqa yo'q. Yangi skanlar ko'rinmasligi mumkin — qayta ulanmoqda.";
+
+// ---------------------------------------------------------------------------
+// Visible (non-screen-reader) error & queue-failure messages
+// ---------------------------------------------------------------------------
+export const QUEUE_LOAD_ERROR  = "Navbatni yuklashda xato — server bilan aloqa yo'q.";
+export const SCAN_LOAD_ERROR   = "Skanni yuklashda xato yuz berdi.";
+export const RETRY             = "Qayta urinish";
+
+// ---------------------------------------------------------------------------
+// High-risk persistent alert banner
+// ---------------------------------------------------------------------------
+export const HIGH_ALERT_TITLE   = "Diqqat: yuqori xavf darajasi aniqlandi";
+export const HIGH_ALERT_BODY    = "Yangi yuqori xavfli skan keldi. Iltimos, ko'rib chiqing.";
+export const HIGH_ALERT_OPEN    = "Skanni ochish";
+export const HIGH_ALERT_DISMISS = "Ogohlantirishni yopish";
+export const SOUND_ON           = "Tovushli signal yoqilgan";
+export const SOUND_OFF          = "Tovushli signal o'chirilgan";
+
+// ---------------------------------------------------------------------------
+// Header "mark as reviewed" (non-decision) action
+// ---------------------------------------------------------------------------
+export const MARK_REVIEWED       = "Ko'rib chiqildi deb belgilash";
+export const MARK_REVIEWED_DONE  = "Ko'rib chiqilgan deb belgilandi";
+
+// ---------------------------------------------------------------------------
+// Reinforced safety confirmation when clearing a HIGH-risk scan
+// ---------------------------------------------------------------------------
+export const CONFIRM_CLEARED_HIGH =
+  "DIQQAT: tizim bu skanni YUQORI xavf deb baholadi, ammo siz uni "
+  + "jismoniy tekshiruvsiz o'tkazmoqchisiz. Bu ziddiyatli qaror jurnalga "
+  + "yoziladi. Davom etishni tasdiqlaysizmi?";
+export const SEIZED_NOTE_REQUIRED =
+  "Musodara qarori uchun izoh majburiy. Iltimos, sababini yozing.";
+
+// ---------------------------------------------------------------------------
+// Live camera
+// ---------------------------------------------------------------------------
+export const LIVE_TITLE          = "Jonli kamera";
+export const LIVE_START          = "Oqimni boshlash";
+export const LIVE_STOP           = "Oqimni to'xtatish";
+export const LIVE_STARTING       = "Boshlanmoqda…";
+export const LIVE_STOPPING       = "To'xtatilmoqda…";
+export const LIVE_RUNNING        = "Oqim faol";
+export const LIVE_STOPPED        = "Oqim to'xtatilgan";
+export const LIVE_NO_SIGNAL      = "Video signal yo'q";
+export const LIVE_DEVICE         = "Qurilma";
+export const LIVE_CADENCE        = "Tahlil oralig'i";
+export const LIVE_FRAMES         = "Tahlil qilingan kadrlar";
+export const LIVE_LAST_ANALYSIS  = "Oxirgi tahlil";
+export const LIVE_ANALYSIS_TITLE = "Jonli tahlil oqimi";
+export const LIVE_NO_ANALYSIS    = "Hali tahlil natijasi yo'q";
+export const LIVE_DETECTIONS     = "Aniqlangan buyumlar";
+export const LIVE_ERROR          = "Kamera oqimida xato yuz berdi.";

@@ -59,6 +59,15 @@ class InvalidTransitionError(ValueError):
     pass
 
 
+class ConcurrentTransitionError(InvalidTransitionError):
+    """Raised when an atomic transition's CAS fails — another writer advanced the
+    scan out of the expected state between our read and our write (TOCTOU race).
+
+    Subclasses InvalidTransitionError so existing callers that already guard
+    against InvalidTransitionError treat a lost race as a rejected transition.
+    """
+
+
 def allowed_transition(from_state: str, event: str) -> str:
     """Return the target state or raise ``InvalidTransitionError``."""
     key = (ScanState(from_state), event)
@@ -89,7 +98,7 @@ class ScanStore(Protocol):
     async def record_verdict(self, verdict: OperatorVerdict, scan_id: UUID) -> None: ...
     async def record_feedback(self, feedback: OperatorFeedback, receipt: FeedbackReceipt) -> None: ...
     async def get_scan(self, scan_id: UUID) -> "ScanRow | None": ...
-    async def mark_reviewing(self, scan_id: UUID) -> None: ...
+    async def mark_reviewing(self, scan_id: UUID) -> bool: ...
 
 
 # ---------------------------------------------------------------------------
@@ -127,18 +136,39 @@ class PostgresScanStore:
         return row.state
 
     async def _transition(self, scan_id: UUID, event: str, **ts_fields) -> str:
-        """Validate + apply a state transition atomically."""
+        """Validate + apply a state transition atomically (compare-and-swap).
+
+        The UPDATE carries ``WHERE state = :expected`` so the read of the current
+        state and the write of the next one are a single atomic operation at the
+        database. If a concurrent writer (e.g. a second operator decision, or a
+        late detector callback) advanced the scan out of the expected state
+        between our read and our write, ``rowcount`` is 0 and we raise
+        ``ConcurrentTransitionError`` rather than clobbering the other writer's
+        result. This closes the TOCTOU race that a plain get→check→update had.
+        """
         row = await self._session.get(Scan, scan_id)
         if row is None:
             raise ValueError(f"Scan {scan_id} not found in DB")
-        new_state = allowed_transition(row.state, event)
+        expected = row.state
+        new_state = allowed_transition(expected, event)
         stmt = (
             update(Scan)
-            .where(Scan.scan_id == scan_id)
+            .where(Scan.scan_id == scan_id, Scan.state == expected)
             .values(state=new_state, **ts_fields)
         )
-        await self._session.execute(stmt)
-        log.info("scan %s: %s → %s (via %s)", scan_id, row.state, new_state, event)
+        result = await self._session.execute(stmt)
+        if result.rowcount == 0:
+            # The CAS lost: the row no longer holds `expected`. Refusing to
+            # overwrite is fail-closed — the concurrent decision stands.
+            raise ConcurrentTransitionError(
+                f"Concurrent state change on scan {scan_id}: expected state "
+                f"'{expected}' for event '{event}' but the row was modified by "
+                f"another writer. Transition rejected."
+            )
+        # Keep the identity-mapped object consistent with the DB write so any
+        # subsequent read in this session sees the new state.
+        row.state = new_state
+        log.info("scan %s: %s → %s (via %s)", scan_id, expected, new_state, event)
         return new_state
 
     # -- public interface --------------------------------------------------
@@ -174,9 +204,11 @@ class PostgresScanStore:
                 box_y=det.box.y,
                 box_width=det.box.width,
                 box_height=det.box.height,
-                # The contract carries the calibration flag in attributes (the
-                # adapter sets attributes["calibrated"]); Detection has no such field.
-                calibrated=(det.attributes.get("calibrated") == "true"),
+                # `calibrated` is now a first-class typed field on Detection.
+                # Backward-compatible: an older producer that only set the legacy
+                # attributes["calibrated"]="true" string still works — we OR the
+                # typed field with the attributes fallback.
+                calibrated=bool(det.calibrated) or (det.attributes.get("calibrated") == "true"),
             ).on_conflict_do_nothing(index_elements=["detection_id"])
             await self._session.execute(stmt)
 
@@ -244,10 +276,14 @@ class PostgresScanStore:
         if state in (ScanState.VERDICTED.value, ScanState.REVIEWING.value, ScanState.ANALYZED.value):
             await self._transition(feedback.scan_id, "feedback.banked", decided_at=now)
 
-    async def mark_reviewing(self, scan_id: UUID) -> None:
+    async def mark_reviewing(self, scan_id: UUID) -> bool:
+        """Transition VERDICTED → REVIEWING. Returns True iff a transition was
+        applied (so the caller only writes an audit event for a real change)."""
         state = await self._get_state(scan_id)
         if state == ScanState.VERDICTED.value:
             await self._transition(scan_id, "scan.opened")
+            return True
+        return False
 
     async def get_scan(self, scan_id: UUID) -> ScanRow | None:
         row = await self._session.get(Scan, scan_id)
@@ -272,10 +308,11 @@ class _NullScanStore:
     async def record_verdict(self, verdict, scan_id):  pass
     async def record_feedback(self, feedback, receipt): pass
     async def get_scan(self, scan_id):                 return None
-    async def mark_reviewing(self, scan_id):           pass
+    async def mark_reviewing(self, scan_id):           return False
 
 
 __all__ = [
-    "ScanState", "InvalidTransitionError", "allowed_transition",
+    "ScanState", "InvalidTransitionError", "ConcurrentTransitionError",
+    "allowed_transition",
     "ScanStore", "ScanRow", "PostgresScanStore", "_NullScanStore",
 ]

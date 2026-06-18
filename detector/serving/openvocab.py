@@ -17,9 +17,11 @@ HONEST LIMITS (read before trusting a number)
       here", not "this is a gun".
     * NARCOTICS in X-ray are an amorphous mass with no silhouette; they are
       separated by dual-energy MATERIAL density, not shape. No RGB/shape model
-      (this one included) detects them reliably. The prompt is wired so the
-      pipeline is *ready*, but real narcotics detection needs the dual-energy
-      material channel — flagged, not faked.
+      (this one included) detects them reliably. We therefore DO NOT emit a
+      narcotics signal from this detector at all — the shape-proxy prompts and
+      the CLIP drug label were removed (they only faked confidence). Real
+      narcotics detection needs the dual-energy material channel; until that
+      exists this layer stays silent on narcotics rather than fabricating a hit.
 
 So this is decision-support screening, deliberately higher-threshold and
 clearly provenanced as ``yolo-world-openvocab`` so nobody mistakes a zero-shot
@@ -59,14 +61,19 @@ PROMPT_TO_CATEGORY: dict[str, ThreatCategory] = {
     "grenade": ThreatCategory.EXPLOSIVE,
     "explosive device": ThreatCategory.EXPLOSIVE,
     "dynamite stick": ThreatCategory.EXPLOSIVE,
-    # --- narcotics (shape-only proxy; see module docstring caveat) ---
-    "bag of white powder": ThreatCategory.NARCOTICS,
-    "drug package": ThreatCategory.NARCOTICS,
-    "pills": ThreatCategory.NARCOTICS,
     # --- other contraband ---
     "stack of banknotes": ThreatCategory.CURRENCY,
     "bottle of liquid": ThreatCategory.CONTRABAND_OTHER,
 }
+
+# REMOVED: narcotics shape-proxy prompts ("bag of white powder", "drug package",
+# "pills"). On a SINGLE-ENERGY X-ray, narcotics are an amorphous mass with no
+# silhouette — a shape/RGB model (YOLO-World + CLIP) cannot tell them from any
+# other powder/package, so these prompts only manufactured FALSE POSITIVES that
+# then drove a NARCOTICS category and inflated the risk band. Real narcotics
+# detection needs the dual-energy MATERIAL-density channel, which this detector
+# does not have. Until that channel exists we do NOT emit a narcotics signal here
+# rather than fake one. (See ClipReclassifier note below for the same reason.)
 
 DEFAULT_PROMPTS: list[str] = list(PROMPT_TO_CATEGORY)
 
@@ -129,7 +136,13 @@ CLIP_LABELS: list[tuple[str, ThreatCategory | None]] = [
     ("a knife or sharp blade", ThreatCategory.BLADED_WEAPON),
     ("a pair of scissors", ThreatCategory.BLADED_WEAPON),
     ("an explosive device or grenade", ThreatCategory.EXPLOSIVE),
-    ("a bag of illegal drugs or narcotics", ThreatCategory.NARCOTICS),
+    # REMOVED: ("a bag of illegal drugs or narcotics", NARCOTICS). CLIP reads
+    # natural-photo appearance; on a single-energy X-ray it cannot distinguish
+    # narcotics from any other dense package, so this label produced a confident
+    # but baseless NARCOTICS verdict. We keep a NEUTRAL "dense package or powder"
+    # distractor mapped to None so such regions are DROPPED, not mislabelled — it
+    # absorbs the proposals the drug label used to grab, without raising risk.
+    ("a dense package or bag of powder", None),
     ("a stack of banknotes or currency", ThreatCategory.CURRENCY),
     ("a harmless everyday object", None),
 ]
@@ -140,7 +153,14 @@ class ClipReclassifier:
     returns the most likely threat category (or None = not a threat)."""
 
     def __init__(self, model_name: str = "ViT-B/32", device: str = "cpu",
-                 min_prob: float = 0.45) -> None:
+                 min_prob: float = 0.60) -> None:
+        # min_prob raised 0.45 -> 0.60. CLIP softmax over a handful of labels is
+        # over-confident on X-ray (a large domain shift from its natural-photo
+        # training), so a 0.45 floor cleared too many loose proposals into the
+        # taxonomy. 0.60 keeps only the crops CLIP is firmly sure about; the rest
+        # are dropped (None) — the recall cost is acceptable because YOLO-World
+        # already over-proposes and this is a screening AID, not the primary
+        # detector.
         import clip  # lazy
         import torch
         torch.set_num_threads(2)

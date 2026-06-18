@@ -12,6 +12,7 @@ import {
   DECISION_SUBMIT, DECISION_SUBMITTING, DECISION_ALREADY_MADE,
   OUTCOME_LABEL, OUTCOME_DESC,
   CONFIRM_CLEARED, CONFIRM_SEIZED, CONFIRM_YES, CONFIRM_NO,
+  CONFIRM_CLEARED_HIGH, SEIZED_NOTE_REQUIRED,
   SR_DECISION_LOGGED,
 } from "../lib/uz";
 
@@ -61,6 +62,20 @@ export function DecisionPanel({ scan, operatorId, judgements, annotations, onDec
   const [liveRegion,  setLiveRegion]  = useState("");
 
   const alreadyDecided = scan.state === "decided";
+  const isHighRisk     = scan.overall_risk === "high";
+
+  // The confirmation copy depends on the outcome AND the system's risk band:
+  // clearing a HIGH-risk scan is a conflicting decision and gets a stronger,
+  // explicitly conflict-flagging prompt.
+  const confirmMessage = (o: OperatorOutcome): string | undefined => {
+    if (o === "cleared") return isHighRisk ? CONFIRM_CLEARED_HIGH : CONFIRM_CLEARED;
+    if (o === "seized")  return CONFIRM_SEIZED;
+    return NEEDS_CONFIRM[o];
+  };
+
+  // A note (justification) is mandatory for seizure.
+  const noteRequired = (o: OperatorOutcome | null): boolean => o === "seized";
+  const noteMissing  = noteRequired(outcome) && notes.trim().length === 0;
 
   const handleOutcomeClick = (o: OperatorOutcome) => {
     setOutcome(o);
@@ -70,7 +85,11 @@ export function DecisionPanel({ scan, operatorId, judgements, annotations, onDec
 
   const handleSubmit = () => {
     if (!outcome) return;
-    if (NEEDS_CONFIRM[outcome] && !confirming) {
+    if (noteRequired(outcome) && notes.trim().length === 0) {
+      setError(SEIZED_NOTE_REQUIRED);
+      return;
+    }
+    if (confirmMessage(outcome) && !confirming) {
       setConfirming(true);
       return;
     }
@@ -181,28 +200,47 @@ export function DecisionPanel({ scan, operatorId, judgements, annotations, onDec
       <div>
         <label className="block text-xs text-content-secondary mb-1" htmlFor="decision-notes">
           {DECISION_NOTE_LABEL}
+          {noteRequired(outcome) && <span className="text-red-400"> *</span>}
         </label>
         <textarea
           id="decision-notes"
           rows={2}
           value={notes}
-          onChange={(e) => setNotes(e.target.value)}
+          onChange={(e) => { setNotes(e.target.value); if (error) setError(null); }}
           placeholder={DECISION_NOTE_HINT}
           maxLength={2000}
-          className="w-full bg-surface-border/50 border border-surface-border rounded px-3 py-2 text-sm text-content-primary placeholder-content-muted resize-none focus:outline-none focus:ring-1 focus:ring-blue-600"
+          aria-required={noteRequired(outcome)}
+          aria-invalid={noteMissing}
+          className={`w-full bg-surface-border/50 border rounded px-3 py-2 text-sm text-content-primary placeholder-content-muted resize-none focus:outline-none focus:ring-1 ${
+            noteMissing ? "border-red-700 focus:ring-red-600" : "border-surface-border focus:ring-blue-600"
+          }`}
         />
       </div>
 
       {/* Confirmation prompt */}
-      {confirming && outcome && NEEDS_CONFIRM[outcome] && (
-        <div className="flex items-start gap-3 p-3 rounded-lg border border-amber-700 bg-amber-900/20 animate-slide-in">
-          <AlertTriangle size={16} className="text-amber-400 shrink-0 mt-0.5" aria-hidden="true" />
+      {confirming && outcome && confirmMessage(outcome) && (
+        <div className={`flex items-start gap-3 p-3 rounded-lg border animate-slide-in ${
+          outcome === "cleared" && isHighRisk
+            ? "border-red-600 bg-red-900/30"
+            : "border-amber-700 bg-amber-900/20"
+        }`}>
+          <AlertTriangle
+            size={16}
+            className={`shrink-0 mt-0.5 ${outcome === "cleared" && isHighRisk ? "text-red-400" : "text-amber-400"}`}
+            aria-hidden="true"
+          />
           <div className="flex-1">
-            <p className="text-sm text-amber-200">{NEEDS_CONFIRM[outcome]}</p>
+            <p className={`text-sm ${outcome === "cleared" && isHighRisk ? "text-red-200 font-semibold" : "text-amber-200"}`}>
+              {confirmMessage(outcome)}
+            </p>
             <div className="flex gap-2 mt-2">
               <button
                 onClick={() => void _submit(outcome)}
-                className="px-3 py-1.5 rounded text-sm font-semibold bg-amber-600 hover:bg-amber-500 text-white transition-colors"
+                className={`px-3 py-1.5 rounded text-sm font-semibold text-white transition-colors ${
+                  outcome === "cleared" && isHighRisk
+                    ? "bg-red-600 hover:bg-red-500"
+                    : "bg-amber-600 hover:bg-amber-500"
+                }`}
               >
                 {CONFIRM_YES}
               </button>
@@ -226,9 +264,9 @@ export function DecisionPanel({ scan, operatorId, judgements, annotations, onDec
       {!confirming && (
         <button
           onClick={handleSubmit}
-          disabled={!outcome || submitting}
+          disabled={!outcome || submitting || noteMissing}
           className={`w-full py-2.5 rounded-lg text-sm font-semibold transition-all flex items-center justify-center gap-2 ${
-            outcome && !submitting
+            outcome && !submitting && !noteMissing
               ? "bg-blue-700 hover:bg-blue-600 text-white"
               : "bg-surface-border text-content-muted cursor-not-allowed"
           }`}

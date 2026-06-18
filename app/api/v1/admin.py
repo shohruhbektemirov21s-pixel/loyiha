@@ -15,7 +15,7 @@ from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -157,8 +157,9 @@ class ThresholdOut(BaseModel):
 
 
 class ThresholdUpdate(BaseModel):
-    alert_threshold: float
-    auto_clear_threshold: float
+    # Confidences live in [0, 1]; enforce at the schema for an immediate 422.
+    alert_threshold: float = Field(ge=0.0, le=1.0)
+    auto_clear_threshold: float = Field(ge=0.0, le=1.0)
     note: Optional[str] = None
 
 
@@ -190,6 +191,17 @@ async def update_threshold(
     claims: TokenClaims  = Depends(require_admin),
     db:     AsyncSession = Depends(get_db),
 ) -> ThresholdOut:
+    # Bounds check (O'RTA-9): both thresholds are confidences in [0, 1]. A value
+    # outside that range would silently never fire (or always fire), so reject it.
+    for name, value in (
+        ("alert_threshold", body.alert_threshold),
+        ("auto_clear_threshold", body.auto_clear_threshold),
+    ):
+        if not (0.0 <= value <= 1.0):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"{name} must be within [0.0, 1.0] (got {value}).",
+            )
     if body.auto_clear_threshold > body.alert_threshold:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,

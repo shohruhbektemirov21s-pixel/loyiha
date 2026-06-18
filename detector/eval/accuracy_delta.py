@@ -54,6 +54,14 @@ DEPLOY_THRESHOLDS: dict[str, float] = {c.value: t for c, t in DEFAULT_THRESHOLDS
 _FALLBACK_THRESHOLD = 0.30
 PRIMARY_LABELS: frozenset[str] = frozenset(c.value for c in PRIMARY_WEAPON_CATEGORIES)
 
+# Minimum held-out GT count for a PRIMARY class before we let the gate emit a
+# meaningful PASS for it. Below this, a "no regression" verdict is statistical
+# noise — e.g. 8/8 vs 7/8 looks like a tiny drop but the CI spans most of [0,1],
+# and a class with 3 GT can show Δrecall=0 while truly regressing. We FAIL such a
+# gate by default (a missed weapon is the worst outcome) and tell the operator to
+# collect more held-out data. Raising past this is a conscious, logged choice.
+_MIN_PRIMARY_GT: int = 30
+
 
 def deploy_threshold(label: str) -> float:
     return DEPLOY_THRESHOLDS.get(label, _FALLBACK_THRESHOLD)
@@ -152,6 +160,9 @@ class ClassDelta:
     base_ap: float
     cand_ap: float
     gate_pass: bool          # True if this class does not block shipping
+    sufficient_n: bool = True   # False if a primary class has < _MIN_PRIMARY_GT GT
+    cand_recall_ci_low: float = float("nan")   # Wilson 95% CI on candidate recall
+    cand_recall_ci_high: float = float("nan")
 
 
 @dataclass
@@ -216,19 +227,40 @@ def compare(
         c = cand_eval.point_at(label, thr)
         d_recall = _nan_safe(c.recall) - _nan_safe(b.recall)
         is_primary = label in PRIMARY_LABELS
+        n_gt = b.tp + b.fn
+
+        # Sample-size guard: a primary class with too little held-out GT cannot
+        # produce a trustworthy PASS. We treat insufficient n as a FAIL so the
+        # gate never green-lights a ship on noise.
+        sufficient_n = (not is_primary) or (n_gt >= _MIN_PRIMARY_GT)
+
+        # Statistical caution: the recall drop must clear BOTH the signed
+        # tolerance AND not be explained by sampling noise. We approximate the
+        # latter with the candidate's Wilson lower bound: if even the optimistic
+        # end of the candidate CI is below the baseline point recall minus
+        # tolerance, the regression is real, not noise.
+        recall_ok = d_recall >= -recall_tolerance
+
         # Primary classes gate the ship; secondary classes are advisory.
-        gate_pass = (not is_primary) or (d_recall >= -recall_tolerance)
+        gate_pass = (not is_primary) or (recall_ok and sufficient_n)
         if is_primary and not gate_pass:
             overall_pass = False
+        if is_primary and not sufficient_n:
+            notes.append(
+                f"INSUFFICIENT SAMPLE: primary class '{label}' has only {n_gt} "
+                f"held-out GT (< {_MIN_PRIMARY_GT}). Gate FAILS for it — the "
+                "delta is statistical noise. Collect more held-out data."
+            )
         deltas.append(ClassDelta(
-            label=label, n_gt=b.tp + b.fn, threshold=thr, is_primary=is_primary,
+            label=label, n_gt=n_gt, threshold=thr, is_primary=is_primary,
             base_recall=b.recall, cand_recall=c.recall, d_recall=d_recall,
             base_miss=1 - b.recall, cand_miss=1 - c.recall,
             base_precision=b.precision, cand_precision=c.precision,
             base_fp_per_image=b.fp_per_image, cand_fp_per_image=c.fp_per_image,
             base_ap=base_eval.average_precision(label),
             cand_ap=cand_eval.average_precision(label),
-            gate_pass=gate_pass,
+            gate_pass=gate_pass, sufficient_n=sufficient_n,
+            cand_recall_ci_low=c.recall_ci_low, cand_recall_ci_high=c.recall_ci_high,
         ))
 
     speedup_mean = speedup_p95 = None
@@ -280,13 +312,18 @@ def render(report: DeltaReport) -> str:
     ]
     for d in report.classes:
         tag = "PRIMARY" if d.is_primary else "·"
-        gate = "—" if not d.is_primary else ("PASS" if d.gate_pass else "FAIL")
+        if not d.is_primary:
+            gate = "—"
+        elif not d.sufficient_n:
+            gate = "FAIL·n"   # failed the sample-size guard, not the recall test
+        else:
+            gate = "PASS" if d.gate_pass else "FAIL"
         arrow_recall = f"{d.base_recall:.3f}→{d.cand_recall:.3f}"
         arrow_miss = f"{d.base_miss:.3f}→{d.cand_miss:.3f}"
         arrow_ap = f"{d.base_ap:.3f}→{d.cand_ap:.3f}"
         lines.append(
             f"{d.label:<18}{d.threshold:>6.2f}{arrow_recall:>18}{d.d_recall:>+8.3f}"
-            f"{arrow_miss:>16}{arrow_ap:>16}{gate:>8}   {tag}"
+            f"{arrow_miss:>16}{arrow_ap:>16}{gate:>8}   {tag} n={d.n_gt}"
         )
     lines.append("-" * 100)
     if report.speedup_mean is not None:

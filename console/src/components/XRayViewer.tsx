@@ -332,7 +332,12 @@ export function XRayViewer({
                           tabIndex={0}
                           aria-label={`${THREAT_CATEGORY[d.category]} — ${Math.round(d.score * 100)}%`}
                           onClick={() => onSelect(isSelected ? null : d.detection_id)}
-                          onKeyDown={(e) => e.key === "Enter" && onSelect(isSelected ? null : d.detection_id)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              onSelect(isSelected ? null : d.detection_id);
+                            }
+                          }}
                           style={{ cursor: "pointer" }}
                         >
                           <rect

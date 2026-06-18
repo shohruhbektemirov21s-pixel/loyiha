@@ -18,8 +18,8 @@ export default {
         },
         content: {
           primary:   "#f1f5f9",
-          secondary: "#94a3b8",
-          muted:     "#475569",
+          secondary: "#aab4c2",  // ~7:1 on #0f1117
+          muted:     "#8b97a8",  // ~4.6:1 on #0f1117 — WCAG AA (was #475569, ~3:1, failing)
         },
       },
       fontFamily: {

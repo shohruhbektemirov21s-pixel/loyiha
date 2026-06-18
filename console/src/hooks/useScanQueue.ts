@@ -37,13 +37,13 @@ export function useScanQueue(laneId: string | null = null) {
   // WS events nudge a refresh so the queue updates in real-time.
   useWebSocket((msg: WsMessage) => {
     if (
-      msg.type === "scan_flagged" ||
-      msg.type === "scan_analyzed" ||
-      msg.type === "scan_decided"
+      msg.type === "scan.flagged" ||
+      msg.type === "scan.analyzed" ||
+      msg.type === "scan.decided"
     ) {
       void fetchRef.current?.();
     }
-  }, laneId);
+  });
 
   const refresh = useCallback(() => void fetch(), [fetch]);
 

@@ -25,6 +25,7 @@ from sqlalchemy.orm import selectinload
 
 from app.auth.dependencies import TokenClaims, require_operator, require_supervisor
 from app.auth.models import OperatorResponse
+from app.deps import AuditSink, provide_audit_sink
 from app.db.models import (
     AuditEvent,
     OperatorRole,
@@ -120,11 +121,24 @@ class ScanListOut(BaseModel):
 # Helpers
 # ---------------------------------------------------------------------------
 def _check_lane_access(scan: Scan, claims: TokenClaims) -> None:
-    """Operators can only see scans from their assigned lanes."""
-    if claims.role == OperatorRole.OPERATOR:
-        if claims.lane_ids and scan.lane_id not in claims.lane_ids:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
-                                detail="You are not assigned to this lane.")
+    """Fail-closed lane RBAC (YUQORI-6).
+
+    Operators may only see scans from a lane they are assigned to. Supervisors
+    and admins see every lane. The check is fail-closed for operators:
+
+      * scan in an assigned lane          -> allowed;
+      * scan in any other lane            -> 403;
+      * operator with NO assigned lanes   -> 403 (an unassigned operator sees
+        nothing, rather than — as the old `if claims.lane_ids` guard did —
+        everything);
+      * scan with a NULL lane_id          -> 403 for operators (an unlaned scan
+        is not "their" lane).
+    """
+    if claims.role != OperatorRole.OPERATOR:
+        return
+    if not claims.lane_ids or scan.lane_id is None or scan.lane_id not in claims.lane_ids:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                            detail="You are not assigned to this lane.")
 
 
 def _to_scan_out(scan: Scan) -> ScanOut:
@@ -157,10 +171,27 @@ async def list_scans(
     if since:
         stmt = stmt.where(Scan.acquired_at >= since)
 
-    # Operators only see their own lanes.
-    if claims.role == OperatorRole.OPERATOR and claims.lane_ids:
-        stmt = stmt.where(Scan.lane_id.in_(claims.lane_ids))
+    # Operators only see their own lanes (fail-closed, YUQORI-6). An operator
+    # with no assigned lanes is restricted to the empty set — never all scans.
+    if claims.role == OperatorRole.OPERATOR:
+        if not claims.lane_ids:
+            # No lanes assigned -> see nothing. (`lane_id == None` matches no
+            # rows; combined with a possible explicit `lane_id` filter it is
+            # still empty, which is the intended fail-closed result.)
+            stmt = stmt.where(Scan.lane_id.is_(None)).where(Scan.lane_id.isnot(None))
+        else:
+            allowed = claims.lane_ids
+            # An operator may still narrow to a single one of THEIR lanes.
+            if lane_id:
+                if lane_id not in allowed:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="You are not assigned to this lane.",
+                    )
+                allowed = [lane_id]
+            stmt = stmt.where(Scan.lane_id.in_(allowed))
     elif lane_id:
+        # Supervisors/admins may filter by any lane.
         stmt = stmt.where(Scan.lane_id == lane_id)
 
     total_result = await db.execute(select(func.count()).select_from(stmt.subquery()))
@@ -278,12 +309,43 @@ async def mark_reviewing(
     scan_id: UUID         = Path(...),
     claims:  TokenClaims  = Depends(require_operator),
     db:      AsyncSession = Depends(get_db),
+    audit:   AuditSink    = Depends(provide_audit_sink),
 ) -> None:
-    """Transition VERDICTED → REVIEWING and record in audit."""
-    from app.state.machine import PostgresScanStore
-    from app.deps import provide_audit_sink
+    """Transition VERDICTED → REVIEWING and record in audit.
+
+    KRITIK-3: the audit sink is injected via ``Depends`` so the real Postgres
+    HMAC sink (wired through ``app.dependency_overrides`` at startup) is used —
+    not the logging-only stub a direct ``provide_audit_sink()`` call would
+    always return regardless of overrides.
+    """
+    from app.state.machine import (
+        ConcurrentTransitionError,
+        InvalidTransitionError,
+        PostgresScanStore,
+    )
+    # Enforce own-lane access before touching state.
+    scan = await db.get(Scan, scan_id)
+    if scan is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scan not found.")
+    _check_lane_access(scan, claims)
+
     store = PostgresScanStore(db)
-    await store.mark_reviewing(scan_id)
+    try:
+        transitioned = await store.mark_reviewing(scan_id)
+    except ConcurrentTransitionError:
+        # Another writer advanced the scan first; the review marker is advisory,
+        # so a lost race is benign — surface 409 so the client can refresh.
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT,
+                            detail="Scan state changed concurrently; refresh and retry.")
+    except InvalidTransitionError:
+        # Not in VERDICTED; mark_reviewing is a no-op there — keep idempotent.
+        return
+
+    # Only audit a real state change, not an idempotent no-op.
+    if transitioned:
+        await audit.record(
+            "scan.opened", scan_id=scan_id, operator_id=claims.sub,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -315,16 +377,23 @@ async def decide_scan(
     body:    DecisionRequest = ...,
     claims:  TokenClaims     = Depends(require_operator),
     db:      AsyncSession    = Depends(get_db),
+    audit:   AuditSink       = Depends(provide_audit_sink),
 ) -> DecisionResponse:
     """Lightweight archive decision — no active-learning loop required.
 
     'confirmed' = operator deems the bag safe (cleared).
     'rejected'  = operator flags the bag as suspicious (seized).
     Either way the scan transitions to DECIDED and leaves the open queue.
+
+    KRITIK-3: ``audit`` is injected via ``Depends(provide_audit_sink)`` so the
+    operator's decision lands in the real tamper-evident Postgres HMAC chain
+    (wired via dependency_overrides at startup) — not the logging-only stub.
+    YUQORI-5: the DECIDED transition is a DB compare-and-swap (see
+    PostgresScanStore._transition); two parallel decisions can't both win — the
+    loser gets 409 instead of a 500.
     """
     from uuid import uuid4
-    from app.state.machine import PostgresScanStore
-    from app.deps import provide_audit_sink
+    from app.state.machine import ConcurrentTransitionError, PostgresScanStore
 
     if body.decision not in _DECISION_OUTCOME:
         raise HTTPException(
@@ -369,11 +438,18 @@ async def decide_scan(
     )
 
     # Drive the state machine to DECIDED (VERDICTED must pass through REVIEWING).
-    if scan.state == ScanState.VERDICTED.value:
-        await store._transition(scan_id, "scan.opened")
-    await store._transition(scan_id, "feedback.banked", decided_at=now)
+    # Atomic CAS: if a parallel decision raced us to DECIDED between our pre-check
+    # and here, the transition's rowcount is 0 and we return 409 (not 500).
+    try:
+        if scan.state == ScanState.VERDICTED.value:
+            await store._transition(scan_id, "scan.opened")
+        await store._transition(scan_id, "feedback.banked", decided_at=now)
+    except ConcurrentTransitionError:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Scan was decided concurrently by another request.",
+        )
 
-    audit = provide_audit_sink()
     await audit.record(
         "scan.decided", scan_id=scan_id, operator_id=claims.sub,
         decision=body.decision, outcome=outcome, note=body.note,

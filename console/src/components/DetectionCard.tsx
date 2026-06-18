@@ -55,21 +55,22 @@ export function DetectionCard({
 
   return (
     <div
-      className={`rounded-lg border transition-all cursor-pointer ${colors.border} ${
+      className={`rounded-lg border transition-all ${colors.border} ${
         selected
           ? "bg-surface-hover ring-1 ring-offset-0"
           : "bg-surface-card hover:bg-surface-hover"
       } ${isLow ? "opacity-75" : ""}`}
-      onClick={onSelect}
-      role="button"
-      tabIndex={0}
-      onKeyDown={(e) => e.key === "Enter" && onSelect()}
-      aria-pressed={selected}
-      aria-label={`${THREAT_CATEGORY[cat]} — ${Math.round(detection.score * 100)}%`}
     >
-      {/* Header */}
+      {/* Header — the single clickable select target (a real <button>, so no
+          nested-interactive antipattern with the controls below) */}
       <div className="flex items-start gap-2 p-3">
-        <div className="flex-1 min-w-0">
+        <button
+          type="button"
+          onClick={onSelect}
+          aria-pressed={selected}
+          aria-label={`${THREAT_CATEGORY[cat]} — ${Math.round(detection.score * 100)}%`}
+          className="flex-1 min-w-0 text-left cursor-pointer rounded focus:outline-none focus-visible:ring-1 focus-visible:ring-blue-500"
+        >
           <div className="flex items-center gap-2 flex-wrap">
             <span className={`text-sm font-semibold ${colors.accent}`}>
               {THREAT_CATEGORY[cat]}
@@ -87,10 +88,11 @@ export function DetectionCard({
           <p className="text-xs text-content-muted mt-0.5 font-mono">
             {detection.native_label}
           </p>
-        </div>
+        </button>
 
         <button
-          onClick={(e) => { e.stopPropagation(); setExpanded((x) => !x); }}
+          type="button"
+          onClick={() => setExpanded((x) => !x)}
           className="shrink-0 p-1 text-content-muted hover:text-content-primary"
           aria-label={expanded ? "Yopish" : "Ko'proq"}
           aria-expanded={expanded}

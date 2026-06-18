@@ -55,8 +55,16 @@ UnitInterval = Annotated[float, Field(ge=0.0, le=1.0, description="Confidence/sc
 Sha256Hex = Annotated[str, Field(pattern=r"^[a-f0-9]{64}$", description="Lowercase hex SHA-256.")]
 
 
-class StrictModel(BaseModel):
-    """Base for every contract message: strict, immutable, audit-friendly."""
+class StrictInbound(BaseModel):
+    """Base for messages validated *off the wire* (requests we ingest).
+
+    Strict, immutable, audit-friendly: ``extra="forbid"`` so a payload that
+    drifts from the contract — a typo, an unknown field, a producer running a
+    *newer* schema with fields we don't understand — is rejected, not guessed
+    at. This is the right stance for inbound validation in an air-gapped system
+    where producer and consumer ship together: a mismatch is a bug to surface,
+    not data to accept.
+    """
 
     model_config = ConfigDict(
         extra="forbid",       # fail-closed on unknown/typo'd fields
@@ -64,6 +72,52 @@ class StrictModel(BaseModel):
         str_strip_whitespace=True,
         validate_assignment=True,
     )
+
+
+class Evolvable(BaseModel):
+    """Base for messages we *read back* (stored payloads, embedded sub-objects).
+
+    Same immutability and hygiene as StrictInbound, but ``extra="ignore"``: a
+    record written by a *future* v1.x producer that added an optional field can
+    still be parsed by today's reader. Within a major version additive fields
+    are allowed by design (see the versioning note above); a strict reader would
+    turn a benign additive change into a hard read failure of historical data.
+
+    Use this for value objects that flow into storage and come back out, and for
+    read models — NOT for the outer wire-request envelope, which stays strict so
+    inbound typos are still caught.
+    """
+
+    model_config = ConfigDict(
+        extra="ignore",       # forward-compatible: tolerate unknown additive fields
+        frozen=True,
+        str_strip_whitespace=True,
+        validate_assignment=True,
+    )
+
+
+# Back-compat alias: existing modules and tests import ``StrictModel``. It is the
+# strict inbound base. New code should pick StrictInbound or Evolvable explicitly.
+StrictModel = StrictInbound
+
+# ``StoredModel`` reads more naturally at persistence call-sites; same as Evolvable.
+StoredModel = Evolvable
+
+
+def schema_major_compatible(wire_version: str, expected: str = SCHEMA_VERSION) -> bool:
+    """True iff ``wire_version`` shares the *major* of ``expected``.
+
+    The contract rule (see the versioning note) is: additive changes stay within
+    a major version; a breaking change bumps the major and moves to a new package
+    (contracts/v2). So a consumer built for "1.0" should accept "1.1", "1.2", …
+    but reject "2.0". This helper expresses that policy in one place; callers that
+    want to *soft*-validate ``schema_version`` (rather than pin it with a Literal)
+    can use it. Pinned ``Literal["1.0"]`` fields are intentionally left as-is to
+    avoid changing existing wire validation / tests.
+    """
+    def _major(v: str) -> str:
+        return v.split(".", 1)[0]
+    return _major(wire_version) == _major(expected)
 
 
 # ---------------------------------------------------------------------------
@@ -116,8 +170,12 @@ class RiskBand(str, Enum):
 # ---------------------------------------------------------------------------
 # Provenance (audit)
 # ---------------------------------------------------------------------------
-class ModelProvenance(StrictModel):
+class ModelProvenance(Evolvable):
     """Identifies the artifact that produced a hop output. Logged at every hop.
+
+    Evolvable (extra="ignore"): provenance is stamped into the audit log and read
+    back later; a future build that adds, say, a `quantization` field must not
+    make today's reader fail on historical rows.
 
     In an air-gapped deployment we cannot rely on a model registry URL; the
     weights hash is the ground truth of *what ran*.
@@ -192,7 +250,8 @@ __all__ = [
     "SCHEMA_VERSION",
     "ScanId", "ScannerId", "LaneId", "OperatorId", "DetectionId", "VerdictId", "FeedbackId", "FrameId",
     "UnitInterval", "Sha256Hex",
-    "StrictModel",
+    "StrictModel", "StrictInbound", "Evolvable", "StoredModel",
+    "schema_major_compatible",
     "ScanSubject", "ImageModality", "ThreatCategory", "RiskBand",
     "ModelProvenance", "StorageRef", "ImageFrame", "PixelBox",
     "datetime",

@@ -3,7 +3,8 @@
 Wraps any ScannerDriver and makes it self-healing:
 
   - Frame timeout: if ``read_scan`` hangs beyond ``frame_timeout_s``, the
-    watchdog cancels the read (via a threading.Event) and reconnects.
+    watchdog abandons the read (a reusable single-worker executor; the hung
+    worker is rotated out on the next read) and reconnects.
   - Connection drops: if ``read_scan`` raises ScannerConnectionError,
     watchdog reconnects with exponential backoff.
   - Malformed frames: ScannerFrameError is logged and counted; after
@@ -12,9 +13,10 @@ Wraps any ScannerDriver and makes it self-healing:
     ScannerUnavailableError — the pipeline must surface this to ops.
 
 Design notes:
-  - read_scan() is called from the pipeline's thread executor (blocking);
-    the watchdog does NOT run its own thread.  It is purely a call-time
-    decorator around driver.read_scan().
+  - read_scan() is run on the watchdog's own single-worker executor so a hung
+    driver cannot block the caller past the hard timeout. The worker is reused
+    across reads (no per-read thread churn); a genuinely hung worker is rotated
+    out on the next read and the executor is released on disconnect().
   - Reconnect itself is synchronous and inline with the calling thread.
     If you need non-blocking reconnects, run the pipeline in a dedicated
     thread or asyncio executor.
@@ -24,8 +26,8 @@ Design notes:
 from __future__ import annotations
 
 import logging
-import threading
 import time
+from concurrent.futures import Future, ThreadPoolExecutor, TimeoutError as FutureTimeout
 from dataclasses import dataclass, field
 
 from acquisition.protocol import (
@@ -75,6 +77,17 @@ class ConnectionWatchdog:
         self._driver = driver
         self._cfg = cfg
         self._stats = WatchdogStats()
+        # A single reusable worker thread for the timed read (O'RTA-10). The old
+        # implementation spawned a fresh daemon thread on EVERY read; under a
+        # hang those accumulated without bound. Now the healthy path reuses one
+        # thread (zero churn). On a hang the worker is genuinely stuck inside the
+        # driver, so we abandon that one executor (its thread can only exit when
+        # the driver returns) and spin up a fresh one for the next read — the
+        # leak is bounded to one thread per *distinct* hang, not one per read.
+        self._executor = ThreadPoolExecutor(
+            max_workers=1, thread_name_prefix="acq-read"
+        )
+        self._pending: Future | None = None
 
     @property
     def stats(self) -> WatchdogStats:
@@ -92,6 +105,11 @@ class ConnectionWatchdog:
             self._driver.disconnect()
         except Exception as exc:
             log.warning("Watchdog: disconnect error (ignored): %s", exc)
+        finally:
+            # Release the read worker. Don't wait on a possibly-hung read; a
+            # hung worker is a daemon-style abandon, the executor itself is
+            # released so its bookkeeping doesn't linger.
+            self._executor.shutdown(wait=False, cancel_futures=True)
 
     # ------------------------------------------------------------------
     # Main entry point
@@ -160,42 +178,49 @@ class ConnectionWatchdog:
     # Internal helpers
     # ------------------------------------------------------------------
     def _timed_read(self, timeout_s: float) -> ScanBundle | Exception:
-        """Run driver.read_scan() in the current thread with a hard timeout.
+        """Run driver.read_scan() on the reusable worker with a hard timeout.
 
         Returns a ScanBundle on success or the caught exception on failure.
-        Uses a daemon thread + Event so the main thread is not blocked
-        indefinitely if the driver hangs.
+
+        Reuses one worker thread across reads (no per-read thread spawn). If a
+        previous read hung, its Future is still outstanding on the single-worker
+        executor; we detect that and rotate to a fresh executor so this read is
+        not blocked behind the stuck one. The stuck thread is abandoned — it can
+        only exit when the driver finally returns — but exactly one thread leaks
+        per distinct hang, never one per read.
         """
-        result_holder: list = []
-        error_holder:  list = []
-        done = threading.Event()
+        # If the prior read is still running (hung), don't queue behind it on the
+        # single worker — rotate the executor so the old worker is abandoned and
+        # a fresh one serves this read.
+        if self._pending is not None and not self._pending.done():
+            log.warning(
+                "Watchdog: previous read still running — abandoning its worker "
+                "and rotating the read executor (scanner=%s).",
+                self._cfg.scanner_id,
+            )
+            self._executor.shutdown(wait=False, cancel_futures=True)
+            self._executor = ThreadPoolExecutor(
+                max_workers=1, thread_name_prefix="acq-read"
+            )
+        self._pending = None
 
-        def _worker():
-            try:
-                bundle = self._driver.read_scan(timeout_s=timeout_s)
-                result_holder.append(bundle)
-            except Exception as exc:
-                error_holder.append(exc)
-            finally:
-                done.set()
-
-        t = threading.Thread(target=_worker, daemon=True, name="acq-read")
-        t.start()
+        future = self._executor.submit(self._driver.read_scan, timeout_s=timeout_s)
         # Wait slightly beyond the driver's own timeout so the driver can
         # raise ScannerTimeoutError before we declare it hung.
-        finished = done.wait(timeout=timeout_s + 5.0)
-
-        if not finished:
-            # Driver is hung — return a timeout error; the thread will
-            # eventually die on its own when the next read fails.
+        try:
+            bundle = future.result(timeout=timeout_s + 5.0)
+        except FutureTimeout:
+            # Driver is hung — keep a handle so the NEXT call rotates the worker
+            # instead of queueing behind the stuck read.
+            self._pending = future
             return ScannerTimeoutError(
                 f"Driver.read_scan() hung beyond {timeout_s + 5.0:.0f}s hard limit."
             )
+        except Exception as exc:
+            return exc
 
-        if result_holder:
-            return result_holder[0]
-        if error_holder:
-            return error_holder[0]
+        if isinstance(bundle, ScanBundle):
+            return bundle
         return ScannerFrameError("Driver returned without result or error.")
 
     def _reconnect(self, initial: bool = False) -> None:

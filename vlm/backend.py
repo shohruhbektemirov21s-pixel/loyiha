@@ -352,7 +352,19 @@ class TransformersBackend:
             os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
 
             import torch
-            from transformers import AutoProcessor, Qwen2_5_VLForConditionalGeneration
+            from transformers import AutoProcessor
+
+            # Use the UNIVERSAL image-text-to-text auto class, not a hard-coded
+            # Qwen2.5-VL class. The serving model is Qwen3-VL — loading it through
+            # ``Qwen2_5_VLForConditionalGeneration`` is the wrong architecture and
+            # either errors or silently mis-maps weights. ``AutoModelForImageText
+            # ToText`` resolves the correct class from the model config (Qwen3-VL,
+            # Qwen2.5-VL, or any future VLM) via the HF auto map. Older transformers
+            # without this class fall back to the generic causal-LM auto class.
+            try:
+                from transformers import AutoModelForImageTextToText as _VLMAuto
+            except ImportError:  # transformers < 4.49
+                from transformers import AutoModelForCausalLM as _VLMAuto  # type: ignore
 
             dtype_map = {
                 "bfloat16": torch.bfloat16,
@@ -365,7 +377,7 @@ class TransformersBackend:
                 self.model_path,
                 trust_remote_code=True,
             )
-            self._model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
+            self._model = _VLMAuto.from_pretrained(
                 self.model_path,
                 torch_dtype=dtype,
                 device_map=self.device_map,

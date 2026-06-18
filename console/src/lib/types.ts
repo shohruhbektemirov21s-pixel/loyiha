@@ -206,34 +206,60 @@ export interface ScanListResponse {
 }
 
 // ---------------------------------------------------------------------------
-// WebSocket notification messages (from app/api/v1/ws.py)
+// WebSocket notification messages (canonical wire format — dotted "type",
+// matching the backend exactly: "scan.flagged", "scan.analyzed", ...).
+// Do NOT use underscores here; the backend emits dots.
 // ---------------------------------------------------------------------------
 export type WsMessageType =
-  | "scan_flagged"
-  | "scan_analyzed"
-  | "scan_decided"
+  | "scan.flagged"
+  | "scan.analyzed"
+  | "scan.decided"
+  | "camera.analysis"
   | "ping"
   | "pong";
 
 export interface WsScanFlagged {
-  type:       "scan_flagged";
-  scan_id:    ScanId;
-  lane_id:    string | null;
-  risk:       RiskBand;
-  categories: ThreatCategory[];
+  type:          "scan.flagged";
+  scan_id:       ScanId;
+  lane_id:       string | null;
+  risk_band:     RiskBand;
+  n_detections:  number;
+  ts:            string;
 }
 
 export interface WsScanAnalyzed {
-  type:    "scan_analyzed";
+  type:    "scan.analyzed";
   scan_id: ScanId;
   lane_id: string | null;
+  ts:      string;
 }
 
 export interface WsScanDecided {
-  type:    "scan_decided";
+  type:    "scan.decided";
   scan_id: ScanId;
   lane_id: string | null;
   outcome: OperatorOutcome;
+  ts:      string;
+}
+
+// Live camera analysis — one per analyzed frame from the camera agent.
+export interface CameraDetectionLite {
+  category: ThreatCategory;
+  score:    UnitInterval;
+  box_x:    number;
+  box_y:    number;
+  box_w:    number;
+  box_h:    number;
+}
+
+export interface WsCameraAnalysis {
+  type:          "camera.analysis";
+  device:        string;
+  ts:            string;
+  risk_band:     RiskBand;
+  n_detections:  number;
+  summary_uz:    string;
+  detections:    CameraDetectionLite[];
 }
 
 export interface WsPing { type: "ping"; }
@@ -243,6 +269,7 @@ export type WsMessage =
   | WsScanFlagged
   | WsScanAnalyzed
   | WsScanDecided
+  | WsCameraAnalysis
   | WsPing
   | WsPong;
 

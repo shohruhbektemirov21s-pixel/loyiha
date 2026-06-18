@@ -20,6 +20,9 @@ rand_pass() { openssl rand -base64 48 | tr -d '\n'; }   # 48 bytes → 64 printa
 
 LAN_IP="${LAN_IP:-$(hostname -I | awk '{print $1}')}"
 TS="$(date -u +%Y%m%dT%H%M%SZ)"
+# Capture the API password once so it can be reused in the asyncpg DSN below.
+API_PW="$(rand_pass)"
+ADMIN_PW="$(rand_pass)"
 
 cat <<EOF
 # X-ray assistant deployment secrets — generated ${TS}
@@ -30,7 +33,7 @@ cat <<EOF
 # Deployment identity
 # ---------------------------------------------------------------------------
 XRAY_VERSION=1.0.0
-XRAY_ENV=production
+XRAY_ENVIRONMENT=production
 LAN_IP=${LAN_IP}
 
 # ---------------------------------------------------------------------------
@@ -38,9 +41,12 @@ LAN_IP=${LAN_IP}
 # ---------------------------------------------------------------------------
 POSTGRES_DB=xray_ops
 POSTGRES_ADMIN_USER=xray_admin
-POSTGRES_ADMIN_PASSWORD=$(rand_pass)
+POSTGRES_ADMIN_PASSWORD=${ADMIN_PW}
 POSTGRES_API_USER=xray_api
-POSTGRES_API_PASSWORD=$(rand_pass)
+POSTGRES_API_PASSWORD=${API_PW}
+# Required in production (app/settings.py refuses to boot without it). Used by
+# the direct-run path (deploy/start.sh); compose builds its own DSN inline.
+XRAY_DB_URL=postgresql+asyncpg://xray_api:${API_PW}@127.0.0.1:5432/xray_ops?ssl=require
 
 # ---------------------------------------------------------------------------
 # API / application secrets
@@ -53,7 +59,7 @@ XRAY_STORE_DIR=/var/lib/xray/store
 # ---------------------------------------------------------------------------
 # Detector
 # ---------------------------------------------------------------------------
-XRAY_DETECTOR_ENABLE=true
+XRAY_DETECTOR_ENABLED=true
 DETECTOR_DEVICE=cuda
 DETECTOR_BATCH_SIZE=1
 DETECTOR_CONF_THRESH=0.35
@@ -61,7 +67,7 @@ DETECTOR_CONF_THRESH=0.35
 # ---------------------------------------------------------------------------
 # VLM
 # ---------------------------------------------------------------------------
-XRAY_VLM_ENABLE=true
+XRAY_VLM_ENABLED=true
 XRAY_VLM_BACKEND=llama_cpp
 XRAY_VLM_MODEL=qwen3-vl-7b-q4_k_m.gguf
 VLM_CTX_SIZE=4096

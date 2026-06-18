@@ -69,6 +69,34 @@ _TEMP_SLOTS: float = 0.10   # slot fill: near-deterministic
 _TEMP_RETRY: float = 0.15   # slightly warmer on retry to escape local minimum
 _MAX_RETRIES: int = 1       # one retry for retryable violations; then fallback
 
+# DetectionVerdict.confidence is a required UnitInterval whose contract meaning is
+# "VLM's confidence in its OWN description, NOT a detection score". The VLM does
+# not emit a calibrated number, so we report a single NEUTRAL sentinel (not a
+# measured value) and disclaim it in the rationale. Never use this for ranking or
+# the risk band — those use the detector's calibrated score.
+_VLM_TEXT_CONFIDENCE: float = 0.50
+
+# Appended to every model-authored rationale so the console never mistakes the
+# VLM's prose (or the 0.50 sentinel above) for a verified/calibrated signal.
+_TEXT_DISCLAIMER_MODEL = (
+    "Eslatma: tavsif matni model tomonidan yozilgan, tasdiqlanmagan — "
+    "qaror detektorning kalibrlangan ballariga asoslanadi."
+)
+_TEXT_DISCLAIMER_FALLBACK = (
+    "Eslatma: model matni ishlatilmadi; tavsif detektor faktlaridan tuzildi."
+)
+
+
+def _append_text_disclaimer(rationale: str, *, is_fallback: bool) -> str:
+    """Append the uncalibrated-text disclaimer, staying within the contract's
+    2000-char ``rationale_uz`` bound (truncate the body, never drop the note)."""
+    note = _TEXT_DISCLAIMER_FALLBACK if is_fallback else _TEXT_DISCLAIMER_MODEL
+    tail = "\n" + note
+    budget = 2000 - len(tail)
+    if len(rationale) > budget:
+        rationale = rationale[: max(0, budget - 1)].rstrip() + "…"
+    return rationale + tail
+
 
 class QwenVLGenerator:
     """``VerdictGenerator`` implementation backed by Qwen3-VL.
@@ -169,11 +197,13 @@ class QwenVLGenerator:
         # the FULL FRAME so the model still SEES pixels (with the box coords in
         # the prompt) instead of running blind on text alone. Text-only is the
         # last resort.
-        crop_bytes = self._load_crop(detection)
+        # Disk reads (store.get / open()) are blocking — run them off the event
+        # loop so concurrent verdict requests don't stall on one slow read.
+        crop_bytes = await asyncio.to_thread(self._load_crop, detection)
         if crop_bytes is not None:
             image_bytes, full_frame = crop_bytes, False
         else:
-            image_bytes = self._load_frame_image(frame)
+            image_bytes = await asyncio.to_thread(self._load_frame_image, frame)
             full_frame = image_bytes is not None
 
         if self._describe:
@@ -191,7 +221,18 @@ class QwenVLGenerator:
             slots = deterministic_slots(detection, frame.width_px, frame.height_px)
 
         rationale = assemble_rationale(detection, slots)
-        vlm_confidence = 0.5 if slots.fallback else 0.80
+        # The VLM produces TEXT, not a calibrated probability. There is no
+        # held-out set that maps "the model wrote a clean Uzbek description" to a
+        # likelihood the detection is real — so the old fixed 0.80 was a
+        # fabricated confidence the console could display as if it were measured.
+        # The contract requires this field (UnitInterval, NOT optional) and its
+        # documented meaning is "VLM's confidence in its own description, NOT a
+        # detection score" — so we set a deliberately NEUTRAL, uncalibrated
+        # sentinel and disclaim it in the rationale. Decision-relevant confidence
+        # is the DETECTOR's calibrated score (on the Detection, driving the risk
+        # band); nothing here feeds the risk decision.
+        vlm_confidence = _VLM_TEXT_CONFIDENCE
+        rationale = _append_text_disclaimer(rationale, is_fallback=slots.fallback)
 
         dv = DetectionVerdict(
             detection_id=detection.detection_id,
@@ -223,7 +264,11 @@ class QwenVLGenerator:
             has_image=image_bytes is not None, full_frame=full_frame,
         )
         system_msg = {"role": "system", "content": SYSTEM_PROMPT}
-        user_msg = make_image_message("user", user_prompt, image_bytes)
+        # base64-encoding a full frame (can be several MB) is CPU-bound and
+        # blocking; run it off the event loop so it doesn't stall other requests.
+        user_msg = await asyncio.to_thread(
+            make_image_message, "user", user_prompt, image_bytes
+        )
         messages = [system_msg, user_msg]
 
         for attempt in range(_MAX_RETRIES + 1):

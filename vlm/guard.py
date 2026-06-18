@@ -15,11 +15,16 @@ Guard design:
 * **Fail-closed, not silent.** Every rejection returns a named ``GuardViolation``
   so the caller can log it, count it by type, and decide whether to retry or fall
   back to the template default.
-* **Ordered checks.** Cyrillic check first (cheap byte scan); if it passes,
-  check for forbidden clearance language; then minimum/maximum length.
+* **Normalize first.** Every slot is NFKC-normalized before any regex runs, so
+  compatibility codepoints (fullwidth Latin, ligatures, combining forms) cannot
+  smuggle a forbidden phrase past the literal matchers. The original text is
+  preserved in the result; normalization is for matching only.
+* **Ordered checks.** Cyrillic scan first (cheap byte scan); then mixed-script
+  (homoglyph) detection; then forbidden clearance language; then length bounds.
 * **Retryable vs. non-retryable.** Cyrillic drift (the model ran away) is
-  worth one retry at the same temperature.  Forbidden clearance phrases are
-  NOT retried — they indicate the model is not safe for this slot.
+  worth one retry at the same temperature.  Forbidden clearance phrases and
+  mixed-script (homoglyph) tokens are NOT retried — they indicate the output is
+  not safe for this slot and a clean retry would not reproduce an attack anyway.
 """
 
 from __future__ import annotations
@@ -34,6 +39,7 @@ from enum import Enum
 # ---------------------------------------------------------------------------
 class ViolationKind(str, Enum):
     CYRILLIC_DETECTED     = "cyrillic_detected"
+    MIXED_SCRIPT          = "mixed_script"           # homoglyph attack: Latin + Cyrillic in one token/text
     RUSSIAN_DETECTED      = "russian_detected"       # Russian stopwords (non-Cyrillic rare; belt+suspenders)
     ENGLISH_DRIFT         = "english_drift"
     FORBIDDEN_CLEARANCE   = "forbidden_clearance"    # model implied the object is OK to pass
@@ -70,23 +76,59 @@ class GuardResult:
 # Cyrillic detection
 # ---------------------------------------------------------------------------
 _CYRILLIC_RANGE = re.compile(r"[\u0400-\u04FF\u0500-\u052F]")
+# Latin letters (ASCII + the few Latin-Extended chars Uzbek Latin uses, e.g. o\u02BB
+# is plain "o" + U+02BB; g\u02BB likewise \u2014 the modifier letters are not in this set
+# because they are script-neutral punctuation).
+_LATIN_RANGE = re.compile(r"[A-Za-z\u00C0-\u024F]")
+# A token that mixes scripts (a homoglyph attack: Cyrillic \u00AB\u0430/\u043E/\u0441/\u0435\u00BB smuggled into
+# a Latin word so the Cyrillic check sees too little to fire and the word still
+# *reads* as Uzbek to an operator). We split on whitespace and inspect each token.
+_TOKEN_SPLIT = re.compile(r"\s+")
 
 
 def _has_cyrillic(text: str) -> bool:
     return bool(_CYRILLIC_RANGE.search(text))
 
 
+def _has_latin(text: str) -> bool:
+    return bool(_LATIN_RANGE.search(text))
+
+
+def _mixed_script_tokens(text: str) -> list[str]:
+    """Return tokens that contain BOTH Latin and Cyrillic letters.
+
+    This catches the homoglyph evasion that a whole-text Cyrillic scan alone can
+    miss in spirit: e.g. ``xavfsiz`` written with a Cyrillic \u00AB\u0430\u00BB so the word
+    still looks Uzbek-Latin to a human but is no longer the string the forbidden
+    list matches. Any such token is a hard violation \u2014 legitimate Uzbek Latin
+    never mixes scripts inside one word.
+    """
+    hits: list[str] = []
+    for tok in _TOKEN_SPLIT.split(text):
+        if tok and _has_latin(tok) and _has_cyrillic(tok):
+            hits.append(tok)
+    return hits
+
+
 # ---------------------------------------------------------------------------
 # Russian stopword list (Latin transliteration — belt+suspenders for edge cases
 # where the model outputs Latin-script Russian rather than Uzbek)
 # ---------------------------------------------------------------------------
+# NOTE: only words that are unambiguously Russian-Latin and do NOT collide with
+# valid Uzbek Latin. Domain nouns like "vagon"/"narkotik"/"skaner" are *also*
+# Uzbek and must NOT live here or every clean report would false-positive — the
+# Cyrillic and mixed-script checks already catch real Russian-script drift.
 _RUSSIAN_LATIN_STOPWORDS = frozenset({
-    "eto", "eti", "eta", "etot", "etikh",
-    "ne", "da", "net", "ili", "no",
-    "kak", "tak", "zdes", "tut",
-    "mozhno", "nelzya",
-    "ochen", "vse", "vsye",
-    "eto ", "nichego",
+    "eto", "eti", "eta", "etot", "etikh", "etom", "etogo", "etu",
+    "ne", "net", "ili", "zhe", "by",
+    "kak", "zdes", "tut", "tam", "gde", "kogda", "potomu",
+    "mozhno", "nelzya", "nuzhno", "dolzhen", "nado",
+    "ochen", "vse", "vsye", "vsego", "vsekh",
+    "nichego", "chto", "chtoby", "kotoryy", "kotoraya",
+    "yavlyaetsya", "imeetsya", "vidno", "viden", "vidna",
+    "predmet", "obekt", "opasnost", "opasno", "opasnyy",
+    "oruzhie", "veshchestvo",
+    "izobrazhenie", "dosmotr",
 })
 
 _RUSSIAN_LATIN_RE = re.compile(
@@ -114,18 +156,30 @@ _ENGLISH_RE = re.compile(
 # ---------------------------------------------------------------------------
 # Forbidden clearance phrases — the model MUST NOT suggest passing the cargo
 # ---------------------------------------------------------------------------
+# Forbidden phrases. Uzbek is agglutinative, so a single stem appears with many
+# suffixes (-dir, -roq, -ku, plural -lar, case endings). We anchor on the STEM
+# and allow an optional Uzbek suffix tail so we catch the morphological family,
+# not just the dictionary form. ``[\sʻ’'-]?`` between words tolerates the apostrophe
+# variants (oʻ / o' / o’) and hyphenation the model emits.
 _FORBIDDEN_UZ = [
-    r"yoʻl\s+qoʻying",      # "let through" (Uzbek)
-    r"yo.l\s+q.ying",        # variant spellings
-    r"xavfsiz",              # "safe"
-    r"ruxsat\s+bering",      # "permit/allow"
-    r"oʻtkazib\s+yubo",      # "let pass"
-    r"tashvishlanmang",      # "don't worry"
-    r"muammo\s+yoʻq",        # "no problem"
-    r"hech\s+narsa\s+yoʻq",  # "nothing there"
-    r"xatar\s+yoʻq",         # "no danger"
-    r"xavf\s+yoʻq",          # "no risk"
-    r"tozadir",              # "clean/clear" (colloquial)
+    r"yo[ʻ’'`]?l\s+qo[ʻ’'`]?ying",     # "let through" + apostrophe variants
+    r"yo.l\s+q.ying",                   # loose variant spellings
+    r"xavfsiz\w*",                      # "safe" + suffixes (xavfsizdir, xavfsizroq)
+    r"xavf(li)?\s+emas\w*",             # "not dangerous / not a risk" (xavfli emas, xavf emas)
+    r"xatar(li)?\s+emas\w*",            # "not a danger"
+    r"ruxsat\s+ber\w*",                 # "permit/allow" (bering, berilsin, berish mumkin)
+    r"o[ʻ’'`]?tkaz\w*\s+(yubor\w*|bo[ʻ’'`]?l\w*)",  # "let pass / can be passed through"
+    r"o[ʻ’'`]?tkaz(sa|ish)\s+bo[ʻ’'`]?l\w*",        # "oʻtkazsa boʻladi" — "can be let through"
+    r"bemalol\s+o[ʻ’'`]?t\w*",          # "passes freely" (bemalol oʻtadi/oʻtkazsa)
+    r"tashvish(lan\w*|siz\w*)",         # "don't worry / worry-free" (tashvishlanmang, tashvishsiz)
+    r"xavotir(lan\w*|siz\w*)",          # "no anxiety / don't be anxious" (xavotirsiz, xavotirlanmang)
+    r"muammo\s+yo[ʻ’'`]?q\w*",          # "no problem"
+    r"hech\s+(narsa|qanday\s+xavf)\s+yo[ʻ’'`]?q\w*",  # "nothing there / no danger at all"
+    r"xatar\s+yo[ʻ’'`]?q\w*",           # "no danger"
+    r"xavf\s+yo[ʻ’'`]?q\w*",            # "no risk"
+    r"toza(dir|\b)\w*",                 # "clean/clear" (tozadir, toza)
+    r"normal\w*\s+yuk",                 # "ordinary cargo" used to clear (normal yuk)
+    r"o[ʻ’'`]?tkaz(ish|sa)\s+mumkin",   # "may be passed through"
 ]
 
 _FORBIDDEN_RE = re.compile(
@@ -161,8 +215,17 @@ class LanguageGuard:
     def check(self, text: str) -> GuardResult:
         violations: list[GuardViolation] = []
 
+        # 0. Unicode normalization (NFKC). Adversarial / sloppy model output can
+        #    smuggle the same glyph in via compatibility codepoints (fullwidth
+        #    Latin, ligatures, combining forms). NFKC folds those to their
+        #    canonical form so every downstream regex sees ONE representation —
+        #    closing an evasion path against the forbidden-clearance list. The
+        #    GuardResult still carries the ORIGINAL text unchanged; normalization
+        #    is for matching only.
+        norm = unicodedata.normalize("NFKC", text)
+
         # 1. Empty
-        stripped = text.strip()
+        stripped = norm.strip()
         if not stripped:
             violations.append(GuardViolation(
                 ViolationKind.EMPTY, "Slot text is empty.", retryable=True,
@@ -193,6 +256,21 @@ class LanguageGuard:
                 f"Cyrillic characters found: {cyrillic_chars!r}. "
                 f"Model drifted to Cyrillic script.",
                 retryable=True,
+            ))
+
+        # 3b. Mixed-script (homoglyph) — a token with BOTH Latin and Cyrillic
+        #     letters is a script-confusion attack: a Cyrillic «а/о/с/е» hidden in
+        #     a Latin word so the text still reads as Uzbek but evades the literal
+        #     forbidden-phrase match. NOT retryable — it is never benign drift;
+        #     a clean Uzbek retry would not reproduce it, and treating it as a
+        #     soft error would let a poisoned crop bypass the clearance gate.
+        mixed = _mixed_script_tokens(stripped)
+        if mixed:
+            violations.append(GuardViolation(
+                ViolationKind.MIXED_SCRIPT,
+                f"Mixed-script (homoglyph) tokens: {mixed[:5]!r}. "
+                f"Latin and Cyrillic letters in one word — possible evasion.",
+                retryable=False,
             ))
 
         # 4. Russian stopwords (Latin)

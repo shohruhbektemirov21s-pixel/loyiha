@@ -125,18 +125,22 @@ services:
       - image-store:/var/lib/xray/store:rw
       - log-archive:/var/log/xray:rw
     environment:
-      XRAY_ENV:                ${XRAY_ENV:-production}
-      XRAY_DATABASE_URL:       postgresql+asyncpg://${POSTGRES_API_USER}:${POSTGRES_API_PASSWORD}@postgres:5432/${POSTGRES_DB}?ssl=require
+      # NOTE: every key here MUST match a field name in app/settings.py
+      # (env_prefix=XRAY_). settings runs extra="forbid", so a stale/renamed
+      # key on this box would abort boot rather than start silently in the wrong
+      # mode. Keep this block and app/settings.py in lock-step.
+      XRAY_ENVIRONMENT:        ${XRAY_ENVIRONMENT:-production}
+      XRAY_DB_URL:             postgresql+asyncpg://${POSTGRES_API_USER}:${POSTGRES_API_PASSWORD}@postgres:5432/${POSTGRES_DB}?ssl=require
       XRAY_JWT_SECRET:         ${XRAY_JWT_SECRET}
       XRAY_AUDIT_HMAC_KEY:     ${XRAY_AUDIT_HMAC_KEY}
       XRAY_STORE_KEY:          ${XRAY_STORE_KEY}
       XRAY_STORE_DIR:          /var/lib/xray/store
-      XRAY_VLM_ENABLE:         ${XRAY_VLM_ENABLE:-true}
+      XRAY_VLM_ENABLED:        ${XRAY_VLM_ENABLED:-true}
       XRAY_VLM_BACKEND:        ${XRAY_VLM_BACKEND:-llama_cpp}
       XRAY_VLM_BASE_URL:       http://vlm:8080
       XRAY_VLM_MODEL:          ${XRAY_VLM_MODEL}
-      XRAY_DETECTOR_ENABLE:    ${XRAY_DETECTOR_ENABLE:-true}
-      XRAY_DETECTOR_MODEL_PATH: /models/detector.onnx
+      XRAY_DETECTOR_ENABLED:   ${XRAY_DETECTOR_ENABLED:-true}
+      XRAY_DETECTOR_WEIGHTS:   /models/detector.onnx
       XRAY_METRICS_ENABLE:     "true"
     read_only: true
     tmpfs: [ "/tmp:size=128m,mode=1777" ]

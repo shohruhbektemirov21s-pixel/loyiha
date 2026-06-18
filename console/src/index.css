@@ -55,8 +55,8 @@
   .bg-surface-hover    { background-color: #22263a; }
   .border-surface-border { border-color: #2a2d3a; }
   .text-content-primary   { color: #f1f5f9; }
-  .text-content-secondary { color: #94a3b8; }
-  .text-content-muted     { color: #475569; }
+  .text-content-secondary { color: #aab4c2; }
+  .text-content-muted     { color: #8b97a8; }
 
   /* Risk band backgrounds / borders / text */
   .bg-risk-high-bg    { background-color: #3b0a0a; }

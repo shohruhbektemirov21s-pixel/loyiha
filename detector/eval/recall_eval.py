@@ -62,6 +62,27 @@ class Prediction:
     score: float
 
 
+def wilson_interval(k: int, n: int, z: float = 1.96) -> tuple[float, float]:
+    """Wilson score interval for a binomial proportion (recall = k recalled / n GT).
+
+    Why Wilson, not normal-approx: recall is a proportion estimated from a SMALL,
+    per-class GT count, often near the 0/1 boundary (a class we catch ~95% of, or
+    a rare class with 12 instances). The textbook ``p ± z·sqrt(p(1-p)/n)`` breaks
+    exactly there — it can dip below 0 or claim a [1.0, 1.0] CI from 8/8. Wilson
+    stays inside [0,1] and is honest at the boundary and on tiny n, which is the
+    whole point of reporting a CI on a miss-rate. Returns (low, high); for n==0 a
+    full-uncertainty (0.0, 1.0).
+    """
+    if n <= 0:
+        return (0.0, 1.0)
+    p = k / n
+    z2 = z * z
+    denom = 1.0 + z2 / n
+    center = (p + z2 / (2 * n)) / denom
+    margin = (z * ((p * (1 - p) / n + z2 / (4 * n * n)) ** 0.5)) / denom
+    return (max(0.0, center - margin), min(1.0, center + margin))
+
+
 def iou_xywh(a: tuple, b: tuple) -> float:
     ax, ay, aw, ah = a
     bx, by, bw, bh = b
@@ -85,6 +106,8 @@ class ClassPRPoint:
     tp: int
     fp: int
     fn: int
+    recall_ci_low: float = float("nan")   # Wilson 95% CI on recall (binomial)
+    recall_ci_high: float = float("nan")
 
 
 class DetectionEval:
@@ -158,7 +181,14 @@ class DetectionEval:
         recall = tp / n_gt if n_gt else float("nan")
         precision = tp / (tp + fp) if (tp + fp) else float("nan")
         fp_per_image = fp / self._n_images if self._n_images else float("nan")
-        return ClassPRPoint(threshold, recall, precision, fp_per_image, tp, fp, fn)
+        # 95% Wilson CI on recall — exposes how trustworthy a per-class recall is
+        # given the GT count (a 0.90 on 10 GT is not a 0.90 on 1000 GT).
+        if n_gt:
+            ci_low, ci_high = wilson_interval(tp, n_gt)
+        else:
+            ci_low = ci_high = float("nan")
+        return ClassPRPoint(threshold, recall, precision, fp_per_image, tp, fp, fn,
+                            recall_ci_low=ci_low, recall_ci_high=ci_high)
 
     def sweep(self, label: str, thresholds: np.ndarray | None = None) -> list[ClassPRPoint]:
         if thresholds is None:
@@ -223,17 +253,21 @@ class DetectionEval:
             f"Recall-first evaluation  (IoU={self.iou_thresh}, images={self._n_images})",
             f"Deploy threshold = {deploy_threshold}   FP/image budget = {fp_budget}",
             "-" * 78,
-            f"{'class':<18}{'recall@thr':>11}{'miss@thr':>10}{'prec@thr':>10}"
-            f"{'FP/img':>9}{'R@FPbud':>9}{'AP@'+str(self.iou_thresh):>9}",
+            f"{'class':<18}{'recall@thr':>11}{'recall 95%CI':>18}{'miss@thr':>10}"
+            f"{'prec@thr':>10}{'FP/img':>9}{'R@FPbud':>9}{'AP@'+str(self.iou_thresh):>9}",
         ]
         for label in self.classes():
             p = self.point_at(label, deploy_threshold)
             rb = self.recall_at_fp_per_image(label, fp_budget)
             ap = self.average_precision(label)
             miss = 1 - p.recall if not np.isnan(p.recall) else float("nan")
+            ci = (f"[{p.recall_ci_low:.3f},{p.recall_ci_high:.3f}]"
+                  if not np.isnan(p.recall_ci_low) else "—")
+            n_gt = self._n_gt.get(label, 0)
+            small = "  ⚠n<30" if 0 < n_gt < 30 else ""
             lines.append(
-                f"{label:<18}{p.recall:>11.3f}{miss:>10.3f}{p.precision:>10.3f}"
-                f"{p.fp_per_image:>9.3f}{rb.recall:>9.3f}{ap:>9.3f}"
+                f"{label:<18}{p.recall:>11.3f}{ci:>18}{miss:>10.3f}"
+                f"{p.precision:>10.3f}{p.fp_per_image:>9.3f}{rb.recall:>9.3f}{ap:>9.3f}{small}"
             )
         # occlusion stratification, primary weapon classes only
         for label in self.classes():
@@ -244,7 +278,8 @@ class DetectionEval:
         return "\n".join(lines)
 
 
-__all__ = ["GroundTruth", "Prediction", "DetectionEval", "ClassPRPoint", "iou_xywh"]
+__all__ = ["GroundTruth", "Prediction", "DetectionEval", "ClassPRPoint",
+           "iou_xywh", "wilson_interval"]
 
 
 if __name__ == "__main__":  # synthetic smoke: shows the report shape end-to-end
