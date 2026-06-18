@@ -276,9 +276,9 @@ function Console({ auth, onLogout }: { auth: AuthState; onLogout: () => void }) 
                 role="tab"
                 aria-selected={acqMode === "camera"}
                 onClick={() => setAcqMode("camera")}
-                className={`press flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border transition-all ${
+                className={`press flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold border transition-all ${
                   acqMode === "camera"
-                    ? "bg-blue-700/50 text-blue-100 border-blue-600 shadow-glow-blue"
+                    ? "bg-teal-500/15 text-teal-200 border-teal-500/50 shadow-glow-teal"
                     : "border-transparent text-content-secondary hover:bg-surface-hover"
                 }`}
               >
@@ -289,9 +289,9 @@ function Console({ auth, onLogout }: { auth: AuthState; onLogout: () => void }) 
                 role="tab"
                 aria-selected={acqMode === "upload"}
                 onClick={() => setAcqMode("upload")}
-                className={`press flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border transition-all ${
+                className={`press flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold border transition-all ${
                   acqMode === "upload"
-                    ? "bg-blue-700/50 text-blue-100 border-blue-600 shadow-glow-blue"
+                    ? "bg-violet-500/15 text-violet-200 border-violet-500/50 shadow-glow-violet"
                     : "border-transparent text-content-secondary hover:bg-surface-hover"
                 }`}
               >
@@ -317,8 +317,17 @@ function Console({ auth, onLogout }: { auth: AuthState; onLogout: () => void }) 
           )}
 
           {sLoading && (
-            <div className="flex-1 flex items-center justify-center text-content-muted text-sm animate-pulse">
-              {LOADING}
+            <div className="flex-1 flex flex-col items-center justify-center gap-4 text-content-muted p-4">
+              <div className="relative w-40 h-28 rounded-xl overflow-hidden surface-sunken section-verdict section-tint">
+                <div className="scan-sweep-line" aria-hidden="true" />
+                <div className="absolute inset-0 grid grid-rows-4 gap-1.5 p-2.5">
+                  <div className="skeleton" />
+                  <div className="skeleton w-3/4" />
+                  <div className="skeleton w-1/2" />
+                  <div className="skeleton w-5/6" />
+                </div>
+              </div>
+              <span className="text-sm tracking-wide animate-pulse" role="status">{LOADING}</span>
             </div>
           )}
 
@@ -350,7 +359,7 @@ function Console({ auth, onLogout }: { auth: AuthState; onLogout: () => void }) 
                     aria-pressed={showAudit}
                     className={`press flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-sm font-medium transition-all ${
                       showAudit
-                        ? "bg-blue-700/50 text-blue-200 border border-blue-600 shadow-glow-blue"
+                        ? "bg-indigo-500/15 text-indigo-200 border border-indigo-500/50 shadow-glow-indigo"
                         : "border border-white/10 glass text-content-secondary hover:bg-surface-hover"
                     }`}
                   >
@@ -382,7 +391,7 @@ function Console({ auth, onLogout }: { auth: AuthState; onLogout: () => void }) 
                   />
 
                   {showAudit && (
-                    <div className="animate-rise-in glass rounded-xl p-3">
+                    <div className="section-decide animate-rise-in glass section-tint rounded-xl p-3">
                       <AuditLog
                         entries={IS_MOCK ? MOCK_AUDIT : auditEntries}
                         chainValid={auditChainValid}
@@ -423,9 +432,15 @@ function fmtTime() {
 // ------------------------------------------------------------------
 function EmptyState() {
   return (
-    <div className="flex-1 flex flex-col items-center justify-center gap-3 text-content-muted">
-      <ScanLine size={40} className="opacity-20" aria-hidden="true" />
-      <p className="text-sm">Skan tanlang</p>
+    <div className="flex-1 flex flex-col items-center justify-center gap-4 text-content-muted p-6">
+      <span className="relative grid place-items-center w-20 h-20 rounded-2xl glass section-verdict section-tint overflow-hidden">
+        <span className="scan-sweep-line" aria-hidden="true" />
+        <ScanLine size={36} className="text-sky-300/70" aria-hidden="true" />
+      </span>
+      <div className="text-center">
+        <p className="text-base font-semibold text-content-secondary">Skan tanlang</p>
+        <p className="text-sm text-content-muted mt-1">Chap paneldagi navbatdan tahlil uchun skanni oching.</p>
+      </div>
     </div>
   );
 }

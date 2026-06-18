@@ -115,13 +115,16 @@ export function ImageScreening() {
   return (
     <section
       aria-labelledby="screen-heading"
-      className="rounded-xl border border-white/10 glass overflow-hidden shadow-elev-3"
+      className="section-screen rounded-xl border border-white/10 glass section-tint overflow-hidden shadow-elev-3"
     >
-      {/* Header */}
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-surface-border">
-        <ImageUp size={16} className="text-blue-400" aria-hidden="true" />
-        <div className="min-w-0">
-          <h2 id="screen-heading" className="text-sm font-semibold text-content-primary">
+      {/* Header — violet "AI vision / upload" identity */}
+      <div className="flex items-center gap-2.5 px-3 py-2.5 border-b border-white/10">
+        <span className="grid place-items-center w-7 h-7 rounded-lg section-tile shrink-0" aria-hidden="true">
+          <ImageUp size={15} />
+        </span>
+        <div className="min-w-0 section-bar pl-3">
+          <p className="text-[10px] font-semibold uppercase section-eyebrow leading-none">Skrining</p>
+          <h2 id="screen-heading" className="text-sm font-bold text-content-primary leading-tight mt-0.5">
             {SCREEN_TITLE}
           </h2>
           <p className="text-xs text-content-muted truncate">{SCREEN_SUBTITLE}</p>
@@ -147,17 +150,19 @@ export function ImageScreening() {
           onDrop={onDrop}
           className={`rounded-xl border-2 border-dashed p-6 flex flex-col items-center justify-center gap-2 text-center transition-all surface-sunken ${
             dragOver
-              ? "border-blue-500 bg-blue-900/20 shadow-glow-blue"
-              : "border-surface-border bg-surface/40"
+              ? "border-violet-500 bg-violet-500/10 shadow-glow-violet"
+              : "border-surface-border bg-surface/40 hover:border-violet-500/40"
           }`}
         >
-          <Upload size={28} className="text-content-muted" aria-hidden="true" />
-          <p className="text-sm font-medium text-content-secondary">{SCREEN_DROPZONE}</p>
+          <span className="grid place-items-center w-12 h-12 rounded-xl section-tile mb-1" aria-hidden="true">
+            <Upload size={22} />
+          </span>
+          <p className="text-sm font-semibold text-content-secondary">{SCREEN_DROPZONE}</p>
           <p className="text-xs text-content-muted">{SCREEN_DROPZONE_HINT}</p>
           <button
             onClick={() => inputRef.current?.click()}
             disabled={analyzing}
-            className="press mt-1 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold bg-gradient-to-b from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 disabled:opacity-50 text-white shadow-elev-2 hover:shadow-glow-blue transition-all"
+            className="press mt-1 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold bg-gradient-to-b from-violet-500 to-violet-600 hover:from-violet-400 hover:to-violet-500 disabled:opacity-50 text-white shadow-elev-2 hover:shadow-glow-violet transition-all"
           >
             <ImageUp size={14} aria-hidden="true" />
             {SCREEN_PICK_FILES}
@@ -182,7 +187,8 @@ export function ImageScreening() {
 
         {/* Selected thumbnails */}
         <div>
-          <h3 className="text-xs font-semibold text-content-secondary uppercase tracking-wide mb-1.5">
+          <h3 className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider section-eyebrow mb-1.5">
+            <span className="w-1 h-3 rounded-full bg-accent-screen/70" aria-hidden="true" />
             {SCREEN_SELECTED_COUNT}: {pending.length}
           </h3>
           {pending.length === 0 ? (
@@ -222,7 +228,7 @@ export function ImageScreening() {
             onClick={handleAnalyze}
             disabled={pending.length === 0 || analyzing}
             aria-busy={analyzing}
-            className="press flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold bg-gradient-to-b from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 disabled:opacity-50 text-white shadow-elev-2 hover:shadow-glow-blue transition-all"
+            className="press flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold bg-gradient-to-b from-violet-500 to-violet-600 hover:from-violet-400 hover:to-violet-500 disabled:opacity-50 text-white shadow-elev-2 hover:shadow-glow-violet transition-all"
           >
             {analyzing
               ? <Loader2 size={14} className="animate-spin" aria-hidden="true" />
@@ -245,7 +251,8 @@ export function ImageScreening() {
         {/* Results */}
         {results.length > 0 && (
           <div>
-            <h3 className="text-xs font-semibold text-content-secondary uppercase tracking-wide mb-1.5">
+            <h3 className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider section-eyebrow mb-1.5">
+              <span className="w-1 h-3 rounded-full bg-accent-screen/70" aria-hidden="true" />
               {SCREEN_RESULTS_TITLE}
             </h3>
             <ul className="flex flex-col gap-3 scene">
@@ -276,8 +283,8 @@ function ResultCard({ result, preview }: { result: ScreenResult; preview?: strin
   const isHigh = result.risk_band === "high";
 
   return (
-    <li className={`card-3d rounded-xl border border-white/10 glass overflow-hidden animate-rise-in shadow-elev-2 ${
-      isHigh ? "halo-high" : ""
+    <li className={`section-screen card-3d rounded-xl border border-white/10 glass overflow-hidden animate-rise-in shadow-elev-2 ${
+      isHigh ? "halo-high" : "section-tint"
     }`}>
       <div className="flex flex-col sm:flex-row">
         {/* Thumbnail */}

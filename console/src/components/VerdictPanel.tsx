@@ -90,7 +90,7 @@ export function VerdictPanel({
   };
 
   return (
-    <div className="flex flex-col h-full gap-4 overflow-hidden">
+    <div className="section-verdict flex flex-col h-full gap-4 overflow-hidden">
 
       {/* ── Risk banner ── */}
       {scan.overall_risk && (
@@ -122,9 +122,9 @@ export function VerdictPanel({
                 <button
                   key={f.frame_id}
                   onClick={() => setFrameIdx(i)}
-                  className={`press px-2.5 py-1 rounded-lg text-xs transition-all ${
+                  className={`press px-2.5 py-1 rounded-lg text-xs font-medium transition-all ${
                     i === frameIdx
-                      ? "bg-blue-700 text-white shadow-glow-blue"
+                      ? "bg-sky-500/20 text-sky-200 border border-sky-500/50 shadow-glow-low"
                       : "glass text-content-secondary hover:bg-surface-hover"
                   }`}
                 >
@@ -150,11 +150,12 @@ export function VerdictPanel({
 
           {/* ── Detections ── */}
           <section aria-labelledby="det-heading">
-            <h3 id="det-heading" className="text-xs font-semibold text-content-secondary uppercase tracking-wide mb-2">
+            <h3 id="det-heading" className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider section-eyebrow mb-2">
+              <span className="w-1 h-3 rounded-full bg-[var(--sec-accent)] opacity-80" aria-hidden="true" />
               {DETECTIONS_TITLE}
               {detections.length > 0 && (
-                <span className="ml-1.5 text-content-muted font-normal normal-case">
-                  ({detections.length})
+                <span className="ml-0.5 px-1.5 py-px rounded-full bg-white/5 text-content-muted font-semibold normal-case tracking-normal">
+                  {detections.length}
                 </span>
               )}
             </h3>
@@ -183,8 +184,9 @@ export function VerdictPanel({
 
           {/* ── VLM summary ── */}
           {(verd || scan.state === "verdicted" || scan.state === "reviewing") && (
-            <section aria-labelledby="verd-heading" className="rounded-xl border border-white/10 glass p-3 space-y-2">
-              <h3 id="verd-heading" className="text-xs font-semibold text-content-secondary uppercase tracking-wide">
+            <section aria-labelledby="verd-heading" className="rounded-xl border border-white/10 glass section-tint p-3 space-y-2">
+              <h3 id="verd-heading" className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider section-eyebrow">
+                <span className="w-1 h-3 rounded-full bg-[var(--sec-accent)] opacity-80" aria-hidden="true" />
                 {VERDICT_TITLE}
               </h3>
 
@@ -213,11 +215,12 @@ export function VerdictPanel({
 
           {/* ── Missed annotations ── */}
           <section aria-labelledby="missed-heading">
-            <h3 id="missed-heading" className="text-xs font-semibold text-content-secondary uppercase tracking-wide mb-2">
+            <h3 id="missed-heading" className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider section-eyebrow mb-2">
+              <span className="w-1 h-3 rounded-full bg-[var(--sec-accent)] opacity-80" aria-hidden="true" />
               {MISSED_TITLE}
               {annotations.length > 0 && (
-                <span className="ml-1.5 text-content-muted font-normal normal-case">
-                  ({annotations.length})
+                <span className="ml-0.5 px-1.5 py-px rounded-full bg-white/5 text-content-muted font-semibold normal-case tracking-normal">
+                  {annotations.length}
                 </span>
               )}
             </h3>

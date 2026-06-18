@@ -33,11 +33,22 @@
     outline-offset: 2px;
   }
 
-  /* Scrollbar — minimal, matches theme */
-  ::-webkit-scrollbar        { width: 6px; height: 6px; }
+  /* Scrollbar — minimal, matches theme. A faint gradient thumb reads more
+     "premium" than a flat fill while staying unobtrusive. */
+  ::-webkit-scrollbar        { width: 8px; height: 8px; }
   ::-webkit-scrollbar-track  { background: transparent; }
-  ::-webkit-scrollbar-thumb  { background: #2a2d3a; border-radius: 3px; }
-  ::-webkit-scrollbar-thumb:hover { background: #3a3f55; }
+  ::-webkit-scrollbar-thumb  {
+    background: linear-gradient(180deg, #353a4d, #262a38);
+    border: 2px solid transparent;
+    background-clip: padding-box;
+    border-radius: 6px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: linear-gradient(180deg, #454b63, #313548);
+    background-clip: padding-box;
+  }
+  /* Firefox */
+  * { scrollbar-width: thin; scrollbar-color: #353a4d transparent; }
 
   /* Screen-reader only utility */
   .sr-only {
@@ -178,6 +189,88 @@
     100% { opacity: 1; transform: translateY(0) scale(1); }
   }
   .animate-rise-in { animation: riseIn 0.30s cubic-bezier(0.16,1,0.3,1); }
+
+  /* ───────────────────────────────────────────────────────────────
+     SECTION IDENTITY SYSTEM (visual variety, not monotone)
+     Each major section carries its own neutral accent (--sec-accent /
+     --sec-rgb), driving: a left gradient accent bar, a tinted icon tile,
+     an eyebrow/heading colour and a faint section-tinted backdrop. Risk
+     colours are NEVER routed through here — they stay reserved for risk.
+     ─────────────────────────────────────────────────────────────── */
+  .section-queue  { --sec-accent: #94a3b8; --sec-rgb: 148,163,184; }
+  .section-live   { --sec-accent: #2dd4bf; --sec-rgb: 45,212,191;  }
+  .section-screen { --sec-accent: #a78bfa; --sec-rgb: 167,139,250; }
+  .section-decide { --sec-accent: #818cf8; --sec-rgb: 129,140,248; }
+  .section-verdict{ --sec-accent: #38bdf8; --sec-rgb: 56,189,248;  } /* sky — viewer/evidence */
+
+  /* Faint diagonal tint layered over a section's glass — gives each zone a
+     subtly different "material" without hurting text contrast. */
+  .section-tint {
+    background-image:
+      linear-gradient(135deg, rgba(var(--sec-rgb), 0.06) 0%, rgba(var(--sec-rgb), 0) 42%);
+  }
+
+  /* Header band with a left accent rule + soft hairline underline. */
+  .section-bar {
+    position: relative;
+  }
+  .section-bar::before {
+    content: "";
+    position: absolute;
+    left: 0; top: 50%;
+    transform: translateY(-50%);
+    width: 3px; height: 1.05em;
+    border-radius: 2px;
+    background: linear-gradient(180deg, var(--sec-accent), rgba(var(--sec-rgb), 0.25));
+    box-shadow: 0 0 8px rgba(var(--sec-rgb), 0.45);
+  }
+
+  /* Icon tile tinted to the active section accent. */
+  .section-tile {
+    background: rgba(var(--sec-rgb), 0.14);
+    border: 1px solid rgba(var(--sec-rgb), 0.32);
+    box-shadow: 0 0 12px rgba(var(--sec-rgb), 0.18), inset 0 1px 0 rgba(255,255,255,0.06);
+    color: var(--sec-accent);
+  }
+
+  /* Eyebrow label — small uppercase tracking, section-tinted. */
+  .section-eyebrow {
+    color: var(--sec-accent);
+    letter-spacing: 0.12em;
+  }
+
+  /* Section accent underline strip (full-width, very thin gradient). */
+  .section-underline {
+    background-image: linear-gradient(90deg,
+      rgba(var(--sec-rgb), 0.55) 0%,
+      rgba(var(--sec-rgb), 0.10) 40%,
+      transparent 80%);
+  }
+
+  /* ── Skeleton shimmer — richer loading than a flat pulse ── */
+  .skeleton {
+    background: linear-gradient(100deg,
+      rgba(255,255,255,0.04) 30%,
+      rgba(255,255,255,0.10) 50%,
+      rgba(255,255,255,0.04) 70%);
+    background-size: 200% 100%;
+    animation: shimmer 1.6s ease-in-out infinite;
+    border-radius: 0.5rem;
+  }
+
+  /* ── Decorative scan sweep line (loading/acquisition feel) ── */
+  .scan-sweep-line {
+    position: absolute; left: 0; right: 0; top: 0; height: 2px;
+    background: linear-gradient(90deg, transparent, rgba(56,189,248,0.7), transparent);
+    animation: scanSweep 2.4s cubic-bezier(0.4,0,0.6,1) infinite;
+  }
+
+  /* ── Gradient hairline divider ── */
+  .divider-soft {
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.10) 50%, transparent);
+    border: none;
+  }
 }
 
 /* ─────────────────────────────────────────────────────────────────────
@@ -204,4 +297,10 @@
   .halo-high {
     box-shadow: 0 0 0 2px rgba(239,68,68,0.85), 0 0 26px rgba(239,68,68,0.45) !important;
   }
+  /* Stop decorative loops; keep skeletons readable as a static tint. */
+  .skeleton {
+    animation: none !important;
+    background: rgba(255,255,255,0.06) !important;
+  }
+  .scan-sweep-line { animation: none !important; opacity: 0 !important; }
 }

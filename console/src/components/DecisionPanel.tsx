@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { AlertTriangle, CheckCircle2, Loader2 } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Loader2, Gavel } from "lucide-react";
 import type {
   ScanRecord, OperatorOutcome, DetectionJudgement, ThreatCategory,
   OperatorAnnotation, OperatorFeedback, DetectionReview,
@@ -156,7 +156,7 @@ export function DecisionPanel({ scan, operatorId, judgements, annotations, onDec
   // ------------------------------------------------------------------
   if (alreadyDecided || done) {
     return (
-      <div className="rounded-xl border border-white/10 glass p-4 flex items-center gap-3 animate-rise-in">
+      <div className="section-decide rounded-xl border border-white/10 glass section-tint p-4 flex items-center gap-3 animate-rise-in">
         <CheckCircle2 size={20} className="text-green-400 shrink-0" aria-hidden="true" />
         <div>
           <p className="text-sm font-semibold text-content-primary">{DECISION_ALREADY_MADE}</p>
@@ -172,12 +172,19 @@ export function DecisionPanel({ scan, operatorId, judgements, annotations, onDec
   }
 
   return (
-    <div className="rounded-xl border border-white/10 glass p-4 space-y-4 shadow-elev-3">
-      {/* Header */}
-      <div>
-        <h2 className="text-sm font-semibold text-content-primary">{DECISION_TITLE}</h2>
-        <p className="text-xs text-content-muted mt-0.5">{DECISION_SUBTITLE}</p>
+    <div className="section-decide rounded-xl border border-white/10 glass section-tint p-4 space-y-4 shadow-elev-3">
+      {/* Header — indigo "operator command" identity */}
+      <div className="flex items-center gap-2.5">
+        <span className="grid place-items-center w-8 h-8 rounded-lg section-tile shrink-0" aria-hidden="true">
+          <Gavel size={16} />
+        </span>
+        <div className="section-bar pl-3">
+          <p className="text-[10px] font-semibold uppercase section-eyebrow leading-none">Operator</p>
+          <h2 className="text-sm font-bold text-content-primary leading-tight mt-0.5">{DECISION_TITLE}</h2>
+          <p className="text-xs text-content-muted mt-0.5">{DECISION_SUBTITLE}</p>
+        </div>
       </div>
+      <div className="divider-soft" aria-hidden="true" />
 
       {/* Outcome selector */}
       <div className="grid grid-cols-2 gap-2 scene">
@@ -211,8 +218,8 @@ export function DecisionPanel({ scan, operatorId, judgements, annotations, onDec
           maxLength={2000}
           aria-required={noteRequired(outcome)}
           aria-invalid={noteMissing}
-          className={`w-full bg-surface-border/50 border rounded px-3 py-2 text-sm text-content-primary placeholder-content-muted resize-none focus:outline-none focus:ring-1 ${
-            noteMissing ? "border-red-700 focus:ring-red-600" : "border-surface-border focus:ring-blue-600"
+          className={`w-full bg-surface-border/50 border rounded-lg px-3 py-2 text-sm text-content-primary placeholder-content-muted resize-none focus:outline-none focus:ring-1 ${
+            noteMissing ? "border-red-700 focus:ring-red-600" : "border-surface-border focus:ring-indigo-500"
           }`}
         />
       </div>
@@ -267,7 +274,7 @@ export function DecisionPanel({ scan, operatorId, judgements, annotations, onDec
           disabled={!outcome || submitting || noteMissing}
           className={`press w-full py-2.5 rounded-lg text-sm font-semibold transition-all flex items-center justify-center gap-2 ${
             outcome && !submitting && !noteMissing
-              ? "bg-gradient-to-b from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 text-white shadow-elev-2 hover:shadow-glow-blue"
+              ? "bg-gradient-to-b from-indigo-500 to-indigo-600 hover:from-indigo-400 hover:to-indigo-500 text-white shadow-elev-2 hover:shadow-glow-indigo"
               : "bg-surface-border text-content-muted cursor-not-allowed"
           }`}
           aria-busy={submitting}

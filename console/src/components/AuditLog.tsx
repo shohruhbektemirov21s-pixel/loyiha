@@ -32,7 +32,8 @@ export function AuditLog({ entries, chainValid }: Props) {
   return (
     <section className="flex flex-col gap-2" aria-labelledby="audit-heading">
       <div className="flex items-center justify-between">
-        <h2 id="audit-heading" className="text-sm font-semibold text-content-primary">
+        <h2 id="audit-heading" className="flex items-center gap-1.5 text-sm font-bold text-content-primary">
+          <span className="w-1 h-3.5 rounded-full bg-[var(--sec-accent)] opacity-80" aria-hidden="true" />
           {AUDIT_TITLE}
         </h2>
         {chainValid !== null && (

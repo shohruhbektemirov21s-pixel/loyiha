@@ -90,23 +90,30 @@ export function LiveCamera() {
   return (
     <section
       aria-labelledby="live-heading"
-      className="rounded-xl border border-white/10 glass overflow-hidden shadow-elev-3"
+      className="section-live rounded-xl border border-white/10 glass section-tint overflow-hidden shadow-elev-3"
     >
-      {/* Header */}
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-surface-border">
-        <Video size={16} className="text-blue-400" aria-hidden="true" />
-        <h2 id="live-heading" className="text-sm font-semibold text-content-primary">
-          {LIVE_TITLE}
-        </h2>
+      {/* Header — teal "realtime" identity */}
+      <div className="flex items-center gap-2.5 px-3 py-2.5 border-b border-white/10">
+        <span className="grid place-items-center w-7 h-7 rounded-lg section-tile shrink-0" aria-hidden="true">
+          <Video size={15} />
+        </span>
+        <div className="section-bar pl-3">
+          <p className="text-[10px] font-semibold uppercase section-eyebrow leading-none">Jonli oqim</p>
+          <h2 id="live-heading" className="text-sm font-bold text-content-primary leading-tight mt-0.5">
+            {LIVE_TITLE}
+          </h2>
+        </div>
         <span
-          className={`ml-2 inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${
+          className={`ml-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-semibold ${
             running
-              ? "bg-green-900/40 text-green-300 border border-green-800/60"
-              : "bg-surface-border text-content-muted"
+              ? "bg-teal-500/15 text-teal-200 border border-teal-500/40"
+              : "bg-surface-border text-content-muted border border-white/5"
           }`}
           role="status"
         >
-          {running ? <Video size={11} aria-hidden="true" /> : <VideoOff size={11} aria-hidden="true" />}
+          {running
+            ? <span className="w-1.5 h-1.5 rounded-full bg-teal-400 animate-pulse-fast" aria-hidden="true" />
+            : <VideoOff size={11} aria-hidden="true" />}
           {running ? LIVE_RUNNING : LIVE_STOPPED}
         </span>
 
@@ -115,7 +122,7 @@ export function LiveCamera() {
             <button
               onClick={handleStart}
               disabled={busy !== null || IS_MOCK}
-              className="press flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-sm font-semibold bg-gradient-to-b from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 disabled:opacity-50 text-white shadow-elev-2 transition-all"
+              className="press flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-sm font-semibold bg-gradient-to-b from-teal-500 to-teal-600 hover:from-teal-400 hover:to-teal-500 disabled:opacity-50 text-slate-950 shadow-elev-2 hover:shadow-glow-teal transition-all"
               aria-busy={busy === "start"}
             >
               {busy === "start"
@@ -147,6 +154,9 @@ export function LiveCamera() {
         {/* Live preview */}
         <div className="relative lg:w-1/2 aspect-video bg-black flex items-center justify-center surface-sunken m-3 rounded-xl overflow-hidden">
           <div className="pointer-events-none absolute inset-0 z-10 rounded-xl" style={{ boxShadow: "inset 0 0 50px 10px rgba(0,0,0,0.7)" }} aria-hidden="true" />
+          {running && (
+            <span className="pointer-events-none absolute left-0 right-0 top-0 z-20 h-0.5 bg-gradient-to-r from-transparent via-teal-400/70 to-transparent animate-scan-sweep" aria-hidden="true" />
+          )}
           {running && !imgError ? (
             <img
               src={cameraLiveUrl()}
@@ -184,12 +194,13 @@ export function LiveCamera() {
 
           {/* Analysis feed */}
           <div className="min-w-0">
-            <h3 className="text-xs font-semibold text-content-secondary uppercase tracking-wide mb-1.5">
+            <h3 className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider section-eyebrow mb-1.5">
+              <span className="w-1 h-3 rounded-full bg-accent-live/70" aria-hidden="true" />
               {LIVE_ANALYSIS_TITLE}
             </h3>
 
             {feed.length === 0 && (
-              <p className="text-sm text-content-muted">{LIVE_NO_ANALYSIS}</p>
+              <p className="text-sm text-content-muted italic">{LIVE_NO_ANALYSIS}</p>
             )}
 
             <ul className="space-y-1.5">

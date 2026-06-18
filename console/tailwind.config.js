@@ -16,6 +16,22 @@ export default {
           medium: "#f59e0b",
           low:    "#ef4444",
         },
+        // ── Neutral SECTION ACCENTS ──────────────────────────────────────
+        // Per-section identity colours. PURELY decorative (section headers,
+        // accent bars, icon tiles, tabs). Deliberately chosen so they NEVER
+        // collide with the risk palette (red/amber/blue/green stay reserved for
+        // risk semantics ONLY). Each main section gets its own hue so the
+        // console reads as distinct zones, not one monotone surface.
+        //   queue   → steel slate   (the inventory rail)
+        //   live    → teal          (motion / realtime)
+        //   screen  → violet        (AI vision / upload)
+        //   decide  → indigo        (operator authority / command)
+        accent: {
+          queue:  "#94a3b8",  // steel
+          live:   "#2dd4bf",  // teal
+          screen: "#a78bfa",  // violet
+          decide: "#818cf8",  // indigo
+        },
         content: {
           primary:   "#f1f5f9",
           secondary: "#aab4c2",  // ~7:1 on #0f1117
@@ -43,6 +59,11 @@ export default {
         "glow-medium": "0 0 0 1px rgba(245,158,11,0.45), 0 0 16px rgba(245,158,11,0.30)",
         "glow-low":    "0 0 0 1px rgba(59,130,246,0.40), 0 0 14px rgba(59,130,246,0.25)",
         "glow-blue":   "0 0 0 1px rgba(59,130,246,0.50), 0 0 18px rgba(59,130,246,0.35)",
+        // Neutral accent glows — soft, decorative section identity (NOT risk).
+        "glow-teal":    "0 0 0 1px rgba(45,212,191,0.35), 0 0 16px rgba(45,212,191,0.22)",
+        "glow-violet":  "0 0 0 1px rgba(167,139,250,0.35), 0 0 16px rgba(167,139,250,0.22)",
+        "glow-indigo":  "0 0 0 1px rgba(129,140,248,0.38), 0 0 16px rgba(129,140,248,0.24)",
+        "glow-steel":   "0 0 0 1px rgba(148,163,184,0.30), 0 0 14px rgba(148,163,184,0.16)",
       },
       backdropBlur: {
         glass: "14px",
@@ -67,6 +88,8 @@ export default {
         "slide-in":   "slideIn 0.22s cubic-bezier(0.16,1,0.3,1)",
         "rise-in":    "riseIn 0.30s cubic-bezier(0.16,1,0.3,1)",
         "halo":       "halo 1.8s cubic-bezier(0.4,0,0.6,1) infinite",
+        "shimmer":    "shimmer 1.6s ease-in-out infinite",
+        "scan-sweep": "scanSweep 2.4s cubic-bezier(0.4,0,0.6,1) infinite",
       },
       keyframes: {
         fadeIn:  { "0%": { opacity: "0" }, "100%": { opacity: "1" } },
@@ -75,6 +98,15 @@ export default {
         halo: {
           "0%, 100%": { boxShadow: "0 0 0 1px rgba(239,68,68,0.55), 0 0 18px rgba(239,68,68,0.40), 0 0 40px rgba(239,68,68,0.18)" },
           "50%":      { boxShadow: "0 0 0 1px rgba(239,68,68,0.75), 0 0 30px rgba(239,68,68,0.65), 0 0 70px rgba(239,68,68,0.35)" },
+        },
+        shimmer: {
+          "0%":   { backgroundPosition: "-200% 0" },
+          "100%": { backgroundPosition: "200% 0" },
+        },
+        scanSweep: {
+          "0%":        { transform: "translateY(-100%)", opacity: "0" },
+          "10%, 90%":  { opacity: "1" },
+          "100%":      { transform: "translateY(900%)", opacity: "0" },
         },
       },
     },

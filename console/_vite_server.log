@@ -142,3 +142,48 @@ Error: connect ECONNREFUSED 127.0.0.1:8001
 22:51:58 [vite] (client) hmr update /src/components/LoginScreen.tsx, /src/index.css
 22:52:05 [vite] (client) hmr update /src/components/ScanStatus.tsx, /src/index.css
 22:52:10 [vite] (client) hmr update /src/components/ConfidenceMeter.tsx, /src/index.css
+23:03:04 [vite] ws proxy socket error:
+Error: read ECONNRESET
+    at TCP.onStreamRead (node:internal/stream_base_commons:216:20)
+23:30:17 [vite] (client) page reload tailwind.config.js
+23:30:23 [vite] (client) page reload tailwind.config.js
+23:30:29 [vite] (client) page reload tailwind.config.js
+23:30:37 [vite] (client) page reload tailwind.config.js
+23:30:46 [vite] (client) hmr update /src/index.css
+23:31:08 [vite] (client) hmr update /src/index.css
+23:31:15 [vite] (client) hmr update /src/index.css
+23:31:41 [vite] (client) hmr update /src/App.tsx, /src/index.css
+23:31:49 [vite] (client) hmr update /src/App.tsx, /src/index.css
+23:31:57 [vite] (client) hmr update /src/App.tsx, /src/index.css
+23:32:07 [vite] (client) hmr update /src/components/ScanQueue.tsx, /src/index.css
+23:32:13 [vite] (client) hmr update /src/components/ScanQueue.tsx, /src/index.css
+23:32:20 [vite] (client) hmr update /src/components/ScanQueue.tsx, /src/index.css
+23:32:25 [vite] (client) hmr update /src/components/ScanQueue.tsx, /src/index.css
+23:32:34 [vite] (client) hmr update /src/components/ScanQueue.tsx, /src/index.css
+23:32:43 [vite] (client) hmr update /src/components/LiveCamera.tsx, /src/index.css
+23:32:57 [vite] (client) hmr update /src/components/LiveCamera.tsx, /src/index.css
+23:33:09 [vite] (client) hmr update /src/components/LiveCamera.tsx, /src/index.css
+23:33:17 [vite] (client) hmr update /src/components/LiveCamera.tsx, /src/index.css
+23:33:24 [vite] (client) hmr update /src/components/LiveCamera.tsx, /src/index.css
+23:33:33 [vite] (client) hmr update /src/components/ImageScreening.tsx, /src/index.css
+23:33:44 [vite] (client) hmr update /src/components/ImageScreening.tsx, /src/index.css
+23:33:50 [vite] (client) hmr update /src/components/ImageScreening.tsx, /src/index.css
+23:33:58 [vite] (client) hmr update /src/components/ImageScreening.tsx, /src/index.css
+23:34:03 [vite] (client) hmr update /src/components/ImageScreening.tsx, /src/index.css
+23:34:09 [vite] (client) hmr update /src/components/ImageScreening.tsx, /src/index.css
+23:34:20 [vite] (client) hmr update /src/components/DecisionPanel.tsx, /src/index.css
+23:34:26 [vite] (client) hmr update /src/components/DecisionPanel.tsx, /src/index.css
+23:34:32 [vite] (client) hmr update /src/components/DecisionPanel.tsx, /src/index.css
+23:34:41 [vite] (client) hmr update /src/components/DecisionPanel.tsx, /src/index.css
+23:34:48 [vite] (client) hmr update /src/components/VerdictPanel.tsx, /src/index.css
+23:34:54 [vite] (client) hmr update /src/components/VerdictPanel.tsx, /src/index.css
+23:35:03 [vite] (client) hmr update /src/components/VerdictPanel.tsx, /src/index.css
+23:35:13 [vite] (client) hmr update /src/components/VerdictPanel.tsx, /src/index.css
+23:35:20 [vite] (client) hmr update /src/components/VerdictPanel.tsx, /src/index.css
+23:35:26 [vite] (client) hmr update /src/components/VerdictPanel.tsx, /src/index.css
+23:35:50 [vite] (client) hmr update /src/components/VerdictPanel.tsx, /src/index.css
+23:37:51 [vite] (client) hmr update /src/components/ScanQueue.tsx, /src/index.css
+23:38:02 [vite] (client) hmr update /src/App.tsx, /src/index.css
+23:38:08 [vite] (client) hmr update /src/App.tsx, /src/index.css
+23:38:13 [vite] (client) hmr update /src/components/AuditLog.tsx, /src/index.css
+23:38:22 [vite] (client) hmr update /src/components/DecisionPanel.tsx, /src/index.css
