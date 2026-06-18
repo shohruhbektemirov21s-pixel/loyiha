@@ -16,6 +16,7 @@ import type {
   ScanSubject,
   ImageModality,
   DetectionStatus,
+  ScreenFlag,
 } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -330,3 +331,55 @@ export const LIVE_ANALYSIS_TITLE = "Jonli tahlil oqimi";
 export const LIVE_NO_ANALYSIS    = "Hali tahlil natijasi yo'q";
 export const LIVE_DETECTIONS     = "Aniqlangan buyumlar";
 export const LIVE_ERROR          = "Kamera oqimida xato yuz berdi.";
+
+// ---------------------------------------------------------------------------
+// Image screening (operator uploads rentgen rasmlarni → Qwen VLM tahlili)
+// ---------------------------------------------------------------------------
+export const SCREEN_TITLE          = "Rentgen rasm yuklash";
+export const SCREEN_SUBTITLE       = "Rasm(lar)ni yuklang — har biri alohida tahlil qilinadi";
+export const SCREEN_DROPZONE       = "Fayllarni shu yerga tashlang";
+export const SCREEN_DROPZONE_HINT  = "yoki tugma orqali tanlang — JPG / PNG, bir nechta rasm mumkin";
+export const SCREEN_PICK_FILES     = "Fayl tanlash";
+export const SCREEN_ANALYZE        = "Tahlil qilish";
+export const SCREEN_ANALYZING      = "Qwen tahlil qilmoqda…";
+export const SCREEN_ANALYZING_HINT =
+  "Tahlil bir necha o'n soniya davom etishi mumkin. Iltimos, kuting.";
+export const SCREEN_CLEAR_ALL      = "Hammasini tozalash";
+export const SCREEN_REMOVE_FILE    = "Rasmni o'chirish";
+export const SCREEN_SELECTED_COUNT = "Tanlangan rasmlar";
+export const SCREEN_NO_FILES       = "Hali rasm tanlanmadi";
+export const SCREEN_RESULTS_TITLE  = "Tahlil natijalari";
+export const SCREEN_WAGON_TYPE     = "Vagon turi";
+export const SCREEN_MAIN_CARGO     = "Asosiy yuk";
+export const SCREEN_RISK_LEVEL     = "Xavf darajasi";
+export const SCREEN_FLAGS_TITLE    = "Bayroqlar";
+export const SCREEN_SUMMARY_LABEL  = "Qwen tavsifi (yuk tarkibi)";
+export const SCREEN_SECONDS        = "Sarflangan vaqt";
+export const SCREEN_RESULT_ERROR   = "Bu rasmni tahlil qilishda xato yuz berdi";
+export const SCREEN_ERROR          = "Tahlil qilishda xato yuz berdi. Qayta urinib ko'ring.";
+export const SCREEN_UNSUPPORTED    = "Faqat JPG yoki PNG rasm fayllari qabul qilinadi.";
+export const SCREEN_DISCLAIMER     =
+  "Bu AI (Qwen) tahlili — faqat ma'lumotnoma uchun. "
+  + "Yakuniy qaror operatorga tegishli va jurnalga yoziladi.";
+
+// Flag labels (contraband classes the VLM screens for)
+export const SCREEN_FLAG_NAME: Record<keyof import("./types").ScreenFlags, string> = {
+  narcotics: "Giyohvand modda",
+  weapon:    "Qurol",
+  tobacco:   "Tamaki",
+  other:     "Boshqa",
+};
+
+// Flag value labels — present / suspected / not-detected.
+// "YO'Q" means "not detected", NEVER "safe to pass".
+export const SCREEN_FLAG_VALUE: Record<ScreenFlag, string> = {
+  "BOR":      "BOR",
+  "SHUBHALI": "SHUBHALI",
+  "YO'Q":     "YO'Q",
+};
+
+// ---------------------------------------------------------------------------
+// Workspace mode switch (camera ⇄ image upload)
+// ---------------------------------------------------------------------------
+export const MODE_CAMERA = "Jonli kamera";
+export const MODE_UPLOAD = "Rasm yuklash / Skrining";

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { ScanLine, Bell, CheckCircle2, Loader2 } from "lucide-react";
+import { ScanLine, Bell, CheckCircle2, Loader2, Video, ImageUp } from "lucide-react";
 import type {
   AuthState, ScanRecord, DetectionJudgement, ThreatCategory,
   OperatorAnnotation, WsMessage,
@@ -23,10 +23,12 @@ import { LoginScreen } from "./components/LoginScreen";
 import { ConnectionStatus } from "./components/ConnectionStatus";
 import { HighRiskBanner, type HighRiskAlert } from "./components/HighRiskBanner";
 import { LiveCamera } from "./components/LiveCamera";
+import { ImageScreening } from "./components/ImageScreening";
 import {
   APP_TITLE, LANE_LABEL, OPERATOR_LABEL, LOADING, LOGOUT,
   AUDIT_TITLE, SCAN_LOAD_ERROR, RETRY,
   MARK_REVIEWED, MARK_REVIEWED_DONE,
+  MODE_CAMERA, MODE_UPLOAD,
 } from "./lib/uz";
 
 // Dev/demo bypass — ONLY when explicitly enabled via VITE_AUTH_BYPASS (or mock
@@ -95,6 +97,9 @@ function Console({ auth, onLogout }: { auth: AuthState; onLogout: () => void }) 
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [reviewing, setReviewing] = useState(false);
   const [srAlert, setSrAlert] = useState("");
+  // Acquisition mode — operator switches between the live camera and uploading
+  // X-ray images for Qwen screening. Both feed the same decision workflow.
+  const [acqMode, setAcqMode] = useState<"camera" | "upload">("camera");
 
   const mainRef = useRef<HTMLElement>(null);
   const srTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -260,9 +265,37 @@ function Console({ auth, onLogout }: { auth: AuthState; onLogout: () => void }) 
           tabIndex={-1}
           className="flex-1 flex flex-col min-w-0 overflow-y-auto focus:outline-none"
         >
-          {/* Live camera — always available above the scan workspace */}
-          <div className="p-4 pb-0">
-            <LiveCamera />
+          {/* Acquisition panel — camera ⇄ image upload, above the workspace */}
+          <div className="p-4 pb-0 flex flex-col gap-3">
+            <div role="tablist" aria-label="Tasvir manbasi" className="flex items-center gap-1.5">
+              <button
+                role="tab"
+                aria-selected={acqMode === "camera"}
+                onClick={() => setAcqMode("camera")}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-sm font-medium border transition-colors ${
+                  acqMode === "camera"
+                    ? "bg-blue-700/40 text-blue-200 border-blue-700"
+                    : "border-surface-border text-content-secondary hover:bg-surface-hover"
+                }`}
+              >
+                <Video size={14} aria-hidden="true" />
+                {MODE_CAMERA}
+              </button>
+              <button
+                role="tab"
+                aria-selected={acqMode === "upload"}
+                onClick={() => setAcqMode("upload")}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-sm font-medium border transition-colors ${
+                  acqMode === "upload"
+                    ? "bg-blue-700/40 text-blue-200 border-blue-700"
+                    : "border-surface-border text-content-secondary hover:bg-surface-hover"
+                }`}
+              >
+                <ImageUp size={14} aria-hidden="true" />
+                {MODE_UPLOAD}
+              </button>
+            </div>
+            {acqMode === "camera" ? <LiveCamera /> : <ImageScreening />}
           </div>
 
           {!scan && !sLoading && !sError && <EmptyState />}

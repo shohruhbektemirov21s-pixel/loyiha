@@ -278,6 +278,39 @@ export type WsMessage =
   | WsPong;
 
 // ---------------------------------------------------------------------------
+// Image screening (POST /v1/screen) — operator-uploaded X-ray images analysed
+// one-by-one by the Qwen VLM. This is the canonical screening contract.
+// ---------------------------------------------------------------------------
+// Each flag reports whether a contraband class is present in the image.
+//  - "BOR"      = present (detected)
+//  - "SHUBHALI" = suspected / inconclusive
+//  - "YO'Q"     = not detected (NOT a clearance — operator still decides)
+export type ScreenFlag = "BOR" | "SHUBHALI" | "YO'Q";
+
+export interface ScreenFlags {
+  narcotics: ScreenFlag;
+  weapon:    ScreenFlag;
+  tobacco:   ScreenFlag;
+  other:     ScreenFlag;
+}
+
+export interface ScreenResult {
+  filename:   string;
+  ok:         boolean;
+  wagon_type: string;       // vagon / yuk turi
+  main_cargo: string;       // asosiy yuk
+  flags:      ScreenFlags;
+  risk_band:  RiskBand;
+  summary_uz: string;       // Qwen tavsifi (ichida nima bor)
+  seconds:    number;
+  error:      string | null;
+}
+
+export interface ScreenResponse {
+  results: ScreenResult[];
+}
+
+// ---------------------------------------------------------------------------
 // Auth (from app/auth/models.py)
 // ---------------------------------------------------------------------------
 export type OperatorRole = "operator" | "supervisor" | "admin";

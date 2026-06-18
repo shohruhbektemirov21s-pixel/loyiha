@@ -50,6 +50,20 @@ class VerdictGenerator(Protocol):
 
 
 @runtime_checkable
+class Screener(Protocol):
+    """Yuk rentgen skrining seam'i (operator rasm yuklash oqimi).
+
+    Operator kamera o'rniga rentgen rasm(lar)ni yuklaydi; Qwen VLM vagon/yuk
+    ichida nima borligini tasvirlaydi va konservativ bayroq beradi. Bu QAROR
+    emas, operatorga SKRINING YORDAMI. Implementatsiya ``vlm.screen.CargoScreener``.
+    """
+
+    async def screen_one(self, image_bytes: bytes, filename: str): ...
+
+    async def screen_many(self, items: list[tuple[bytes, str]]): ...
+
+
+@runtime_checkable
 class AuditSink(Protocol):
     """Append-only audit trail. Every hop crossing is recorded here."""
 
@@ -80,6 +94,24 @@ class _UnimplementedVerdictGenerator:
         raise ServiceNotImplemented("VerdictGenerator not wired in. Override `provide_verdict_generator`.")
 
 
+class _UnimplementedScreener:
+    """Default: VLM ulanmagan -> 501 (fail-closed). Jim soxta natija emas.
+
+    ``provide_screener`` ni ``app.main._wire_screener`` haqiqiy
+    ``CargoScreener`` bilan override qiladi (XRAY_VLM_ENABLED bo'lsa).
+    """
+
+    async def screen_one(self, image_bytes: bytes, filename: str):
+        raise ServiceNotImplemented(
+            "Screener ulanmagan. XRAY_VLM_ENABLED ni yoqing yoki `provide_screener` ni override qiling."
+        )
+
+    async def screen_many(self, items: list[tuple[bytes, str]]):
+        raise ServiceNotImplemented(
+            "Screener ulanmagan. XRAY_VLM_ENABLED ni yoqing yoki `provide_screener` ni override qiling."
+        )
+
+
 class _LoggingAuditSink:
     """Default audit sink: structured log line. Replace with the Postgres sink."""
 
@@ -95,6 +127,7 @@ class _UnimplementedFeedbackSink:
 # Module-level singletons; swap these (or use dependency_overrides) to wire reality.
 _detector: Detector = _UnimplementedDetector()
 _verdict_generator: VerdictGenerator = _UnimplementedVerdictGenerator()
+_screener: Screener = _UnimplementedScreener()
 _audit_sink: AuditSink = _LoggingAuditSink()
 _feedback_sink: FeedbackSink = _UnimplementedFeedbackSink()
 
@@ -106,6 +139,10 @@ def provide_detector() -> Detector:
 
 def provide_verdict_generator() -> VerdictGenerator:
     return _verdict_generator
+
+
+def provide_screener() -> Screener:
+    return _screener
 
 
 def provide_audit_sink() -> AuditSink:

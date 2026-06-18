@@ -153,6 +153,47 @@ def _wire_vlm(app: FastAPI, settings: Settings) -> None:
     log.info("VLM seam: LIVE (%s v%s via %s)", cfg.name, cfg.version, cfg.backend_type)
 
 
+def _wire_screener(app: FastAPI, settings: Settings) -> None:
+    """Composition root: operator rasm-yuklash skrining oqimi (``/v1/screen``).
+
+    XRAY_VLM_ENABLED bo'lsa Qwen3-VL backend (xuddi _wire_vlm dagi sozlamalar)
+    bilan ``CargoScreener`` quriladi va ``provide_screener`` override qilinadi.
+    O'chirilgan bo'lsa stub qoladi -> endpoint 501 (fail-closed), jim soxta emas.
+
+    Bu _wire_vlm dan ALOHIDA: u OperatorVerdict generatorini (Hop 3, detektordan
+    keyin matn) quradi; bu esa standalone rentgen rasm skriningini quradi. Ikkalasi
+    bir xil backend sozlamalarini ishlatadi.
+    """
+    if not settings.vlm_enabled:
+        log.info("screener seam: stub (501) — XRAY_VLM_ENABLED is off")
+        return
+
+    from vlm.backend import build_backend
+    from vlm.screen import CargoScreener
+    from app.deps import provide_screener
+
+    is_local = settings.vlm_backend.lower() in ("transformers", "local", "direct")
+    effective_base_url = (
+        settings.vlm_model_path if is_local else settings.vlm_base_url
+    )
+
+    backend = build_backend(
+        settings.vlm_backend,
+        base_url=effective_base_url,
+        model=settings.vlm_model,
+        timeout_s=settings.vlm_timeout_s,
+    )
+    screener = CargoScreener(
+        backend=backend,
+        temperature=settings.vlm_temperature,
+        max_tokens=settings.vlm_max_tokens,
+    )
+    app.dependency_overrides[provide_screener] = lambda: screener
+    log.info(
+        "screener seam: LIVE (%s via %s)", settings.vlm_model, settings.vlm_backend
+    )
+
+
 def _wire_datalayer(app: FastAPI, settings: Settings) -> None:
     """Composition root for Hop 4. Wires the ActiveLearningLoop as the FeedbackSink.
 
@@ -185,6 +226,7 @@ async def lifespan(app: FastAPI):
     _wire_db(app, settings)
     _wire_detector(app, settings)
     _wire_vlm(app, settings)
+    _wire_screener(app, settings)
     _wire_datalayer(app, settings)
     yield
     # Kamera uzluksiz oqimini to'xtatamiz — capture thread va VideoCapture

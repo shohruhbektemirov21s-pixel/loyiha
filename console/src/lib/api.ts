@@ -14,6 +14,7 @@ import type {
   OperatorFeedback,
   FeedbackReceipt,
   TokenResponse,
+  ScreenResponse,
 } from "./types";
 
 const BASE = "/v1";
@@ -385,6 +386,49 @@ export async function decideScan(
     method: "POST",
     body: JSON.stringify({ decision, note: note ?? null }),
   });
+}
+
+// ---------------------------------------------------------------------------
+// Image screening — operator uploads 1..N X-ray images; the backend runs each
+// through the Qwen VLM and returns one result per file (canonical /v1/screen).
+//
+// NOTE: this is multipart/form-data, so we do NOT reuse `request()` (which pins
+// Content-Type: application/json). We let the browser set the multipart
+// boundary automatically by NOT setting Content-Type ourselves.
+// ---------------------------------------------------------------------------
+export async function screenImages(files: File[]): Promise<ScreenResponse> {
+  if (files.length === 0) {
+    throw new ApiError(0, "Tahlil uchun kamida bitta rasm tanlang.");
+  }
+
+  const form = new FormData();
+  for (const file of files) {
+    form.append("files", file, file.name);
+  }
+
+  const token = loadToken();
+  const res = await fetch(`${BASE}/screen`, {
+    method: "POST",
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    body: form,
+  });
+
+  if (res.status === 401) {
+    notifyAuthExpired();
+    throw new ApiError(401, "Sessiya tugadi. Qayta kiring.");
+  }
+
+  if (!res.ok) {
+    let body: unknown;
+    try { body = await res.json(); } catch { /* ignore */ }
+    const detail =
+      typeof body === "object" && body !== null && "detail" in body
+        ? String((body as Record<string, unknown>).detail)
+        : res.statusText;
+    throw new ApiError(res.status, detail, body);
+  }
+
+  return res.json() as Promise<ScreenResponse>;
 }
 
 // ---------------------------------------------------------------------------
