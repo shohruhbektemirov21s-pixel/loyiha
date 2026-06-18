@@ -122,10 +122,10 @@ export function VerdictPanel({
                 <button
                   key={f.frame_id}
                   onClick={() => setFrameIdx(i)}
-                  className={`px-2 py-0.5 rounded text-xs transition-colors ${
+                  className={`press px-2.5 py-1 rounded-lg text-xs transition-all ${
                     i === frameIdx
-                      ? "bg-blue-700 text-white"
-                      : "bg-surface-border text-content-secondary hover:bg-surface-hover"
+                      ? "bg-blue-700 text-white shadow-glow-blue"
+                      : "glass text-content-secondary hover:bg-surface-hover"
                   }`}
                 >
                   {f.view_label ?? `Kadr ${i + 1}`}
@@ -163,7 +163,7 @@ export function VerdictPanel({
               <p className="text-sm text-content-muted">{NO_DETECTIONS}</p>
             )}
 
-            <div className="space-y-2">
+            <div className="space-y-2 scene">
               {detections.map((d) => (
                 <DetectionCard
                   key={d.detection_id}
@@ -183,7 +183,7 @@ export function VerdictPanel({
 
           {/* ── VLM summary ── */}
           {(verd || scan.state === "verdicted" || scan.state === "reviewing") && (
-            <section aria-labelledby="verd-heading" className="rounded-lg border border-surface-border bg-surface-card p-3 space-y-2">
+            <section aria-labelledby="verd-heading" className="rounded-xl border border-white/10 glass p-3 space-y-2">
               <h3 id="verd-heading" className="text-xs font-semibold text-content-secondary uppercase tracking-wide">
                 {VERDICT_TITLE}
               </h3>

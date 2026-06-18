@@ -115,7 +115,7 @@ export function ImageScreening() {
   return (
     <section
       aria-labelledby="screen-heading"
-      className="rounded-lg border border-surface-border bg-surface-card overflow-hidden"
+      className="rounded-xl border border-white/10 glass overflow-hidden shadow-elev-3"
     >
       {/* Header */}
       <div className="flex items-center gap-2 px-3 py-2 border-b border-surface-border">
@@ -145,9 +145,9 @@ export function ImageScreening() {
           onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
           onDragLeave={() => setDragOver(false)}
           onDrop={onDrop}
-          className={`rounded-lg border-2 border-dashed p-6 flex flex-col items-center justify-center gap-2 text-center transition-colors ${
+          className={`rounded-xl border-2 border-dashed p-6 flex flex-col items-center justify-center gap-2 text-center transition-all surface-sunken ${
             dragOver
-              ? "border-blue-500 bg-blue-900/20"
+              ? "border-blue-500 bg-blue-900/20 shadow-glow-blue"
               : "border-surface-border bg-surface/40"
           }`}
         >
@@ -157,7 +157,7 @@ export function ImageScreening() {
           <button
             onClick={() => inputRef.current?.click()}
             disabled={analyzing}
-            className="mt-1 flex items-center gap-1.5 px-3 py-1.5 rounded text-sm font-semibold bg-blue-700 hover:bg-blue-600 disabled:opacity-50 text-white transition-colors"
+            className="press mt-1 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold bg-gradient-to-b from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 disabled:opacity-50 text-white shadow-elev-2 hover:shadow-glow-blue transition-all"
           >
             <ImageUp size={14} aria-hidden="true" />
             {SCREEN_PICK_FILES}
@@ -188,11 +188,11 @@ export function ImageScreening() {
           {pending.length === 0 ? (
             <p className="text-sm text-content-muted">{SCREEN_NO_FILES}</p>
           ) : (
-            <ul className="flex flex-wrap gap-2">
+            <ul className="flex flex-wrap gap-2 scene">
               {pending.map((p) => (
                 <li
                   key={p.id}
-                  className="relative w-24 rounded border border-surface-border overflow-hidden bg-black/40 group"
+                  className="tilt-soft relative w-24 rounded-lg border border-surface-border overflow-hidden bg-black/40 shadow-elev-2 group"
                 >
                   <img
                     src={p.preview}
@@ -222,7 +222,7 @@ export function ImageScreening() {
             onClick={handleAnalyze}
             disabled={pending.length === 0 || analyzing}
             aria-busy={analyzing}
-            className="flex items-center gap-1.5 px-4 py-2 rounded text-sm font-semibold bg-blue-700 hover:bg-blue-600 disabled:opacity-50 text-white transition-colors"
+            className="press flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold bg-gradient-to-b from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 disabled:opacity-50 text-white shadow-elev-2 hover:shadow-glow-blue transition-all"
           >
             {analyzing
               ? <Loader2 size={14} className="animate-spin" aria-hidden="true" />
@@ -248,7 +248,7 @@ export function ImageScreening() {
             <h3 className="text-xs font-semibold text-content-secondary uppercase tracking-wide mb-1.5">
               {SCREEN_RESULTS_TITLE}
             </h3>
-            <ul className="flex flex-col gap-3">
+            <ul className="flex flex-col gap-3 scene">
               {results.map((r, i) => (
                 <ResultCard key={`${r.filename}-${i}`} result={r} preview={previewFor(r.filename)} />
               ))}
@@ -272,11 +272,16 @@ function ResultCard({ result, preview }: { result: ScreenResult; preview?: strin
     ["other",     result.flags.other],
   ] as const;
 
+  // High-risk results read as the most "raised"/salient card (red halo).
+  const isHigh = result.risk_band === "high";
+
   return (
-    <li className="rounded-lg border border-surface-border bg-surface/40 overflow-hidden animate-fade-in">
+    <li className={`card-3d rounded-xl border border-white/10 glass overflow-hidden animate-rise-in shadow-elev-2 ${
+      isHigh ? "halo-high" : ""
+    }`}>
       <div className="flex flex-col sm:flex-row">
         {/* Thumbnail */}
-        <div className="sm:w-40 shrink-0 bg-black/50 flex items-center justify-center">
+        <div className="sm:w-40 shrink-0 bg-black/50 flex items-center justify-center surface-sunken">
           {preview ? (
             <img src={preview} alt={result.filename} className="w-full h-40 sm:h-full object-contain" />
           ) : (

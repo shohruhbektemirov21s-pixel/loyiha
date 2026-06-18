@@ -206,11 +206,15 @@ function Console({ auth, onLogout }: { auth: AuthState; onLogout: () => void }) 
 
   // ----------------------------------------------------------------
   return (
-    <div className="flex flex-col h-screen bg-surface text-content-primary overflow-hidden">
+    <div className="relative flex flex-col h-screen text-content-primary overflow-hidden">
+      {/* Subtle perspective grid sitting behind the whole console (depth) */}
+      <div className="pointer-events-none absolute inset-0 bg-grid-fine opacity-60" aria-hidden="true" />
 
       {/* ── Top bar ── */}
-      <header className="flex items-center gap-3 px-4 py-2 border-b border-surface-border bg-surface-card shrink-0">
-        <ScanLine size={18} className="text-blue-400" aria-hidden="true" />
+      <header className="relative z-10 flex items-center gap-3 px-4 py-2.5 border-b border-white/10 glass-strong shrink-0">
+        <span className="grid place-items-center w-8 h-8 rounded-lg bg-blue-900/40 border border-blue-700/50 shadow-glow-blue" aria-hidden="true">
+          <ScanLine size={17} className="text-blue-300" />
+        </span>
         <span className="text-sm font-bold tracking-tight">{APP_TITLE}</span>
 
         {laneId && (
@@ -247,7 +251,7 @@ function Console({ auth, onLogout }: { auth: AuthState; onLogout: () => void }) 
       <span className="sr-only" role="status" aria-live="assertive" aria-atomic="true">{srAlert}</span>
 
       {/* ── Body: queue | main ── */}
-      <div className="flex flex-1 min-h-0 overflow-hidden">
+      <div className="relative z-10 flex flex-1 min-h-0 overflow-hidden">
 
         {/* Left: Scan queue */}
         <ScanQueue
@@ -267,15 +271,15 @@ function Console({ auth, onLogout }: { auth: AuthState; onLogout: () => void }) 
         >
           {/* Acquisition panel — camera ⇄ image upload, above the workspace */}
           <div className="p-4 pb-0 flex flex-col gap-3">
-            <div role="tablist" aria-label="Tasvir manbasi" className="flex items-center gap-1.5">
+            <div role="tablist" aria-label="Tasvir manbasi" className="flex items-center gap-1.5 p-1 rounded-xl glass w-fit">
               <button
                 role="tab"
                 aria-selected={acqMode === "camera"}
                 onClick={() => setAcqMode("camera")}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-sm font-medium border transition-colors ${
+                className={`press flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border transition-all ${
                   acqMode === "camera"
-                    ? "bg-blue-700/40 text-blue-200 border-blue-700"
-                    : "border-surface-border text-content-secondary hover:bg-surface-hover"
+                    ? "bg-blue-700/50 text-blue-100 border-blue-600 shadow-glow-blue"
+                    : "border-transparent text-content-secondary hover:bg-surface-hover"
                 }`}
               >
                 <Video size={14} aria-hidden="true" />
@@ -285,10 +289,10 @@ function Console({ auth, onLogout }: { auth: AuthState; onLogout: () => void }) 
                 role="tab"
                 aria-selected={acqMode === "upload"}
                 onClick={() => setAcqMode("upload")}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-sm font-medium border transition-colors ${
+                className={`press flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border transition-all ${
                   acqMode === "upload"
-                    ? "bg-blue-700/40 text-blue-200 border-blue-700"
-                    : "border-surface-border text-content-secondary hover:bg-surface-hover"
+                    ? "bg-blue-700/50 text-blue-100 border-blue-600 shadow-glow-blue"
+                    : "border-transparent text-content-secondary hover:bg-surface-hover"
                 }`}
               >
                 <ImageUp size={14} aria-hidden="true" />
@@ -319,9 +323,9 @@ function Console({ auth, onLogout }: { auth: AuthState; onLogout: () => void }) 
           )}
 
           {scan && !sLoading && (
-            <div className="flex-1 flex flex-col min-h-0 p-4 gap-4">
+            <div className="flex-1 flex flex-col min-h-0 p-4 gap-4 animate-rise-in">
               {/* Scan header */}
-              <div className="flex items-center gap-3 shrink-0 flex-wrap">
+              <div className="flex items-center gap-3 shrink-0 flex-wrap glass rounded-xl px-3 py-2">
                 <ScanStatus state={scan.state} risk={scan.overall_risk} />
                 <span className="text-sm text-content-muted font-mono">
                   {new Date(scan.acquired_at).toLocaleString("uz-Latn-UZ")}
@@ -333,7 +337,7 @@ function Console({ auth, onLogout }: { auth: AuthState; onLogout: () => void }) 
                     <button
                       onClick={handleMarkReviewed}
                       disabled={reviewing}
-                      className="flex items-center gap-1.5 px-2.5 py-1 rounded text-sm font-medium border border-surface-border text-content-secondary hover:bg-surface-hover disabled:opacity-50 transition-colors"
+                      className="press flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-sm font-medium border border-white/10 glass text-content-secondary hover:bg-surface-hover disabled:opacity-50 transition-all"
                     >
                       {reviewing
                         ? <Loader2 size={13} className="animate-spin" aria-hidden="true" />
@@ -344,10 +348,10 @@ function Console({ auth, onLogout }: { auth: AuthState; onLogout: () => void }) 
                   <button
                     onClick={toggleAudit}
                     aria-pressed={showAudit}
-                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-sm font-medium transition-colors ${
+                    className={`press flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-sm font-medium transition-all ${
                       showAudit
-                        ? "bg-blue-700/40 text-blue-300 border border-blue-700"
-                        : "border border-surface-border text-content-secondary hover:bg-surface-hover"
+                        ? "bg-blue-700/50 text-blue-200 border border-blue-600 shadow-glow-blue"
+                        : "border border-white/10 glass text-content-secondary hover:bg-surface-hover"
                     }`}
                   >
                     <Bell size={13} aria-hidden="true" />
@@ -378,7 +382,7 @@ function Console({ auth, onLogout }: { auth: AuthState; onLogout: () => void }) 
                   />
 
                   {showAudit && (
-                    <div className="animate-slide-in">
+                    <div className="animate-rise-in glass rounded-xl p-3">
                       <AuditLog
                         entries={IS_MOCK ? MOCK_AUDIT : auditEntries}
                         chainValid={auditChainValid}

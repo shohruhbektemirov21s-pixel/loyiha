@@ -15,7 +15,7 @@ const RISK_STYLE: Record<RiskBand, string> = {
   clear:  "bg-risk-clear-bg border border-risk-clear-border text-risk-clear-text",
   low:    "bg-risk-low-bg  border border-risk-low-border  text-risk-low-text",
   medium: "bg-risk-medium-bg border border-risk-medium-border text-risk-medium-text",
-  high:   "bg-risk-high-bg border border-risk-high-border text-risk-high-text",
+  high:   "bg-risk-high-bg border border-risk-high-border text-risk-high-text shadow-glow-high",
 };
 
 interface Props {

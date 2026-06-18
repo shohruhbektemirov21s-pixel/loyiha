@@ -14,7 +14,13 @@
   }
 
   body {
-    background: #0f1117;
+    /* Layered depth backdrop: dual coloured radials + vertical fade.
+       Kept very low-alpha so text contrast over it stays WCAG AA. */
+    background:
+      radial-gradient(1200px 600px at 20% -10%, rgba(59,130,246,0.10), transparent 60%),
+      radial-gradient(900px 500px at 110% 10%, rgba(124,58,237,0.08), transparent 55%),
+      linear-gradient(180deg, #0f1117 0%, #0c0e14 100%);
+    background-attachment: fixed;
     color: #f1f5f9;
     margin: 0;
     padding: 0;
@@ -71,4 +77,131 @@
   .text-risk-medium-text { color: #fcd34d; }
   .text-risk-low-text    { color: #93c5fd; }
   .text-risk-clear-text  { color: #86efac; }
+
+  /* ───────────────────────────────────────────────────────────────
+     PREMIUM 3D / DEPTH DESIGN SYSTEM
+     Purely presentational. Logic, props and risk-colour semantics are
+     untouched. Heavy motion / parallax is disabled under
+     prefers-reduced-motion (see the block at the end of this file).
+     ─────────────────────────────────────────────────────────────── */
+
+  /* Fine perspective grid overlay (very subtle, sits behind content). */
+  .bg-grid-fine {
+    background-image:
+      linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px);
+    background-size: 32px 32px;
+  }
+
+  /* Frosted-glass surface — translucent fill + blur + hairline border +
+     top rim highlight. Text on top keeps full-opacity content-* colours so
+     contrast stays AA. */
+  .glass {
+    background-color: rgba(26, 29, 39, 0.62);
+    backdrop-filter: blur(14px) saturate(140%);
+    -webkit-backdrop-filter: blur(14px) saturate(140%);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow:
+      0 6px 14px rgba(0,0,0,0.50), 0 10px 28px rgba(0,0,0,0.40),
+      inset 0 1px 0 0 rgba(255,255,255,0.06);
+  }
+  .glass-strong {
+    background-color: rgba(20, 23, 31, 0.78);
+    backdrop-filter: blur(18px) saturate(150%);
+    -webkit-backdrop-filter: blur(18px) saturate(150%);
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    box-shadow:
+      0 1px 2px rgba(0,0,0,0.40),
+      inset 0 1px 0 0 rgba(255,255,255,0.05);
+  }
+
+  /* Raised panel — opaque card with a top-lit gradient + elevation shadow. */
+  .surface-raised {
+    background-color: #1a1d27;
+    background-image: linear-gradient(160deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.015) 24%, rgba(0,0,0,0.10) 100%);
+    box-shadow:
+      0 2px 4px rgba(0,0,0,0.45), 0 4px 10px rgba(0,0,0,0.35),
+      inset 0 1px 0 0 rgba(255,255,255,0.06);
+  }
+  /* Sunken surface — for inputs, X-ray frame, tracks, dropzones. */
+  .surface-sunken {
+    box-shadow: inset 0 2px 8px rgba(0,0,0,0.70), inset 0 0 0 1px rgba(255,255,255,0.03);
+  }
+
+  /* Perspective context for tilt cards. */
+  .scene { perspective: 1100px; }
+
+  /* 3D card — lifts + dynamic shadow on hover, presses on active.
+     transform-style preserve-3d enables true depth for inner layers. */
+  .card-3d {
+    transform-style: preserve-3d;
+    transition:
+      transform 0.28s cubic-bezier(0.16,1,0.3,1),
+      box-shadow 0.28s cubic-bezier(0.16,1,0.3,1);
+    will-change: transform;
+  }
+  .card-3d:hover {
+    transform: translateY(-3px) translateZ(0) scale(1.012) rotateX(2.2deg);
+    box-shadow:
+      0 14px 30px rgba(0,0,0,0.55), 0 24px 56px rgba(0,0,0,0.42),
+      inset 0 1px 0 0 rgba(255,255,255,0.08);
+  }
+  .card-3d:active {
+    transform: translateY(-1px) scale(0.997);
+    transition-duration: 0.08s;
+  }
+
+  /* Subtler tilt for list rows (less motion, keeps reading stable). */
+  .tilt-soft {
+    transition: transform 0.22s cubic-bezier(0.16,1,0.3,1), box-shadow 0.22s cubic-bezier(0.16,1,0.3,1);
+  }
+  .tilt-soft:hover { transform: translateY(-1.5px); }
+
+  /* Button press micro-interaction. */
+  .press {
+    transition: transform 0.12s cubic-bezier(0.16,1,0.3,1), box-shadow 0.18s ease, background-color 0.18s ease;
+  }
+  .press:active { transform: translateY(1px) scale(0.98); }
+
+  /* Risk depth halos — severity as luminance/depth, not colour only. */
+  .glow-high   { box-shadow: 0 0 0 1px rgba(239,68,68,0.55), 0 0 22px rgba(239,68,68,0.45), 0 0 48px rgba(239,68,68,0.25); }
+  .glow-medium { box-shadow: 0 0 0 1px rgba(245,158,11,0.45), 0 0 16px rgba(245,158,11,0.30); }
+  .glow-low    { box-shadow: 0 0 0 1px rgba(59,130,246,0.40), 0 0 14px rgba(59,130,246,0.25); }
+  /* High-risk pulsating halo — the single most salient surface. */
+  .halo-high   { animation: halo 1.8s cubic-bezier(0.4,0,0.6,1) infinite; }
+  @keyframes halo {
+    0%, 100% { box-shadow: 0 0 0 1px rgba(239,68,68,0.55), 0 0 18px rgba(239,68,68,0.40), 0 0 40px rgba(239,68,68,0.18); }
+    50%      { box-shadow: 0 0 0 1px rgba(239,68,68,0.75), 0 0 30px rgba(239,68,68,0.65), 0 0 70px rgba(239,68,68,0.35); }
+  }
+  @keyframes riseIn {
+    0%   { opacity: 0; transform: translateY(10px) scale(0.985); }
+    100% { opacity: 1; transform: translateY(0) scale(1); }
+  }
+  .animate-rise-in { animation: riseIn 0.30s cubic-bezier(0.16,1,0.3,1); }
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+   ACCESSIBILITY: respect reduced-motion. Disable transforms, parallax,
+   pulsing halos and tilts. Risk colour + border + icon + glow ring REMAIN
+   (static box-shadow ring stays via glow-* base, halo just stops animating),
+   so the safety signal is never lost — only the motion is removed.
+   ───────────────────────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+  .card-3d:hover,
+  .tilt-soft:hover { transform: none !important; }
+  .card-3d:active,
+  .press:active { transform: none !important; }
+  body { background-attachment: scroll; }
+  /* Keep the high-risk surface salient with a strong STATIC ring. */
+  .halo-high {
+    box-shadow: 0 0 0 2px rgba(239,68,68,0.85), 0 0 26px rgba(239,68,68,0.45) !important;
+  }
 }

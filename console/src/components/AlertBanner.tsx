@@ -16,27 +16,28 @@ const CONFIG: Record<RiskBand, {
 }> = {
   high: {
     // Distinct shield icon — high is visually different from medium, not
-    // colour-only (color-blind safe).
+    // colour-only (color-blind safe). Pulsing red halo = most salient
+    // surface in the whole console (motion stops under reduced-motion).
     icon:  <ShieldAlert size={20} aria-hidden="true" />,
-    outer: "border-risk-high-border bg-risk-high-bg",
+    outer: "border-risk-high-border bg-risk-high-bg halo-high",
     inner: "text-risk-high-text",
     title: RISK_BAND.high,
   },
   medium: {
     icon:  <AlertTriangle size={20} aria-hidden="true" />,
-    outer: "border-risk-medium-border bg-risk-medium-bg",
+    outer: "border-risk-medium-border bg-risk-medium-bg shadow-glow-medium",
     inner: "text-risk-medium-text",
     title: RISK_BAND.medium,
   },
   low: {
     icon:  <Info size={20} aria-hidden="true" />,
-    outer: "border-risk-low-border bg-risk-low-bg",
+    outer: "border-risk-low-border bg-risk-low-bg shadow-glow-low",
     inner: "text-risk-low-text",
     title: RISK_BAND.low,
   },
   clear: {
     icon:  <CheckCircle2 size={20} aria-hidden="true" />,
-    outer: "border-risk-clear-border bg-risk-clear-bg",
+    outer: "border-risk-clear-border bg-risk-clear-bg shadow-elev-2",
     inner: "text-risk-clear-text",
     title: RISK_BAND.clear,
   },
@@ -49,9 +50,9 @@ export function AlertBanner({ risk, summaryUz, onDismiss }: Props) {
     <div
       role="alert"
       aria-live="assertive"
-      className={`relative flex gap-3 items-start p-3 rounded-lg border animate-slide-in ${cfg.outer}`}
+      className={`relative flex gap-3 items-start p-3 rounded-xl border bg-depth-card animate-rise-in ${cfg.outer}`}
     >
-      <span className={cfg.inner}>{cfg.icon}</span>
+      <span className={`${cfg.inner} ${risk === "high" ? "animate-pulse" : ""}`}>{cfg.icon}</span>
 
       <div className="flex-1 min-w-0">
         <p className={`text-sm font-semibold ${cfg.inner}`}>{cfg.title}</p>

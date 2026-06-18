@@ -36,7 +36,7 @@ export function ConfidenceMeter({ value, label, showNote, size = "md" }: Props) 
 
       {/* Track */}
       <div
-        className={`w-full rounded-full ${h} bg-surface-border overflow-hidden`}
+        className={`w-full rounded-full ${h} bg-surface-border overflow-hidden surface-sunken`}
         role="meter"
         aria-valuenow={pct}
         aria-valuemin={0}

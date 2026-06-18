@@ -90,7 +90,7 @@ export function LiveCamera() {
   return (
     <section
       aria-labelledby="live-heading"
-      className="rounded-lg border border-surface-border bg-surface-card overflow-hidden"
+      className="rounded-xl border border-white/10 glass overflow-hidden shadow-elev-3"
     >
       {/* Header */}
       <div className="flex items-center gap-2 px-3 py-2 border-b border-surface-border">
@@ -115,7 +115,7 @@ export function LiveCamera() {
             <button
               onClick={handleStart}
               disabled={busy !== null || IS_MOCK}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded text-sm font-semibold bg-blue-700 hover:bg-blue-600 disabled:opacity-50 text-white transition-colors"
+              className="press flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-sm font-semibold bg-gradient-to-b from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 disabled:opacity-50 text-white shadow-elev-2 transition-all"
               aria-busy={busy === "start"}
             >
               {busy === "start"
@@ -127,7 +127,7 @@ export function LiveCamera() {
             <button
               onClick={handleStop}
               disabled={busy !== null}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded text-sm font-semibold bg-red-800 hover:bg-red-700 disabled:opacity-50 text-white transition-colors"
+              className="press flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-sm font-semibold bg-gradient-to-b from-red-700 to-red-800 hover:from-red-600 hover:to-red-700 disabled:opacity-50 text-white shadow-elev-2 transition-all"
               aria-busy={busy === "stop"}
             >
               {busy === "stop"
@@ -145,7 +145,8 @@ export function LiveCamera() {
 
       <div className="flex flex-col lg:flex-row">
         {/* Live preview */}
-        <div className="relative lg:w-1/2 aspect-video bg-black flex items-center justify-center">
+        <div className="relative lg:w-1/2 aspect-video bg-black flex items-center justify-center surface-sunken m-3 rounded-xl overflow-hidden">
+          <div className="pointer-events-none absolute inset-0 z-10 rounded-xl" style={{ boxShadow: "inset 0 0 50px 10px rgba(0,0,0,0.7)" }} aria-hidden="true" />
           {running && !imgError ? (
             <img
               src={cameraLiveUrl()}
@@ -200,7 +201,9 @@ export function LiveCamera() {
                 return (
                   <li
                     key={a._id}
-                    className={`rounded border p-2 text-sm animate-fade-in ${ui.cls}`}
+                    className={`rounded-lg border p-2 text-sm animate-rise-in shadow-elev-2 ${ui.cls} ${
+                      a.risk_band === "high" ? "halo-high" : ""
+                    }`}
                   >
                     <div className="flex items-center gap-1.5 font-semibold">
                       {ui.icon}

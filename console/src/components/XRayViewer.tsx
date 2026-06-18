@@ -253,9 +253,15 @@ export function XRayViewer({
       {/* Viewer area */}
       <div
         ref={containerRef}
-        className="relative flex-1 overflow-hidden rounded-lg bg-black border border-surface-border"
+        className="relative flex-1 overflow-hidden rounded-xl bg-black border border-white/10 surface-sunken shadow-elev-3"
         onWheel={handleWheel}
       >
+        {/* Vignette — deepens the recessed 3D-inset look of the X-ray frame */}
+        <div
+          className="pointer-events-none absolute inset-0 z-10 rounded-xl"
+          style={{ boxShadow: "inset 0 0 60px 12px rgba(0,0,0,0.75)" }}
+          aria-hidden="true"
+        />
         {/* Loading skeleton */}
         {!imgLoaded && !imgError && imgUrl && (
           <div className="absolute inset-0 flex items-center justify-center">
@@ -470,10 +476,10 @@ function ToolBtn({
       title={title}
       aria-label={title}
       aria-pressed={active}
-      className={`p-1.5 rounded transition-colors ${
+      className={`press p-1.5 rounded-lg transition-all ${
         active
-          ? "bg-amber-600/30 text-amber-300 border border-amber-600/40"
-          : "text-content-secondary hover:text-content-primary hover:bg-surface-hover"
+          ? "bg-amber-600/30 text-amber-300 border border-amber-600/40 shadow-glow-medium"
+          : "glass text-content-secondary hover:text-content-primary hover:bg-surface-hover"
       }`}
     >
       {children}

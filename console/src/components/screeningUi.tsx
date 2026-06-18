@@ -19,8 +19,8 @@ export interface RiskUi {
 // risk_band → colour + icon. Mirrors the RISK_UI pattern in LiveCamera and the
 // risk-* tokens in tailwind.config.js. "clear" = no finding (NOT a clearance).
 export const SCREEN_RISK_UI: Record<RiskBand, RiskUi> = {
-  high:   { cls: "bg-risk-high-bg border-risk-high-border text-risk-high-text",       icon: <ShieldAlert   size={14} aria-hidden="true" /> },
-  medium: { cls: "bg-risk-medium-bg border-risk-medium-border text-risk-medium-text", icon: <AlertTriangle size={14} aria-hidden="true" /> },
+  high:   { cls: "bg-risk-high-bg border-risk-high-border text-risk-high-text shadow-glow-high",       icon: <ShieldAlert   size={14} aria-hidden="true" /> },
+  medium: { cls: "bg-risk-medium-bg border-risk-medium-border text-risk-medium-text shadow-glow-medium", icon: <AlertTriangle size={14} aria-hidden="true" /> },
   low:    { cls: "bg-risk-low-bg border-risk-low-border text-risk-low-text",          icon: <Info          size={14} aria-hidden="true" /> },
   clear:  { cls: "bg-risk-clear-bg border-risk-clear-border text-risk-clear-text",    icon: <CheckCircle2  size={14} aria-hidden="true" /> },
 };

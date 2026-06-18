@@ -54,18 +54,19 @@ export function LoginScreen({ onLogin }: Props) {
   };
 
   return (
-    <div className="min-h-screen bg-surface flex items-center justify-center px-4">
-      <div className="w-full max-w-sm space-y-6">
+    <div className="relative min-h-screen flex items-center justify-center px-4 overflow-hidden">
+      <div className="pointer-events-none absolute inset-0 bg-grid-fine opacity-50" aria-hidden="true" />
+      <div className="relative z-10 w-full max-w-sm space-y-6 scene">
         {/* Logo */}
         <div className="flex flex-col items-center gap-3 text-center">
-          <div className="p-3 rounded-xl bg-blue-900/40 border border-blue-800/60">
-            <ScanLine size={28} className="text-blue-400" aria-hidden="true" />
+          <div className="p-3 rounded-xl bg-blue-900/40 border border-blue-700/60 shadow-glow-blue">
+            <ScanLine size={28} className="text-blue-300" aria-hidden="true" />
           </div>
           <h1 className="text-xl font-bold text-content-primary">{APP_TITLE}</h1>
         </div>
 
         {/* Card */}
-        <div className="bg-surface-card border border-surface-border rounded-xl p-6 space-y-4">
+        <div className="card-3d glass border border-white/10 rounded-xl2 p-6 space-y-4 shadow-elev-4">
           <h2 className="text-sm font-semibold text-content-secondary">{LOGIN_TITLE}</h2>
 
           <form onSubmit={handleSubmit} noValidate className="space-y-3">
@@ -106,7 +107,7 @@ export function LoginScreen({ onLogin }: Props) {
             <button
               type="submit"
               disabled={loading || !username}
-              className="w-full py-2.5 rounded-lg text-sm font-semibold bg-blue-700 hover:bg-blue-600 disabled:bg-surface-border disabled:text-content-muted text-white transition-colors flex items-center justify-center gap-2"
+              className="press w-full py-2.5 rounded-lg text-sm font-semibold bg-gradient-to-b from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 disabled:from-surface-border disabled:to-surface-border disabled:text-content-muted text-white shadow-elev-2 hover:shadow-glow-blue transition-all flex items-center justify-center gap-2"
               aria-busy={loading}
             >
               {loading && <Loader2 size={14} className="animate-spin" aria-hidden="true" />}

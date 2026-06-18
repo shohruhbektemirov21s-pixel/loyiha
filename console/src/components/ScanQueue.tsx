@@ -20,7 +20,7 @@ const DONE_STATES  = new Set(["decided", "error"]);
 
 // Risk badge: icon + text + colour (never colour-only — color-blind safe).
 const RISK_BADGE: Record<RiskBand, { cls: string; icon: React.ReactNode }> = {
-  high:   { cls: "bg-risk-high-bg text-risk-high-text border border-risk-high-border",       icon: <ShieldAlert size={11} aria-hidden="true" /> },
+  high:   { cls: "bg-risk-high-bg text-risk-high-text border border-risk-high-border shadow-glow-high",       icon: <ShieldAlert size={11} aria-hidden="true" /> },
   medium: { cls: "bg-risk-medium-bg text-risk-medium-text border border-risk-medium-border", icon: <AlertTriangle size={11} aria-hidden="true" /> },
   low:    { cls: "bg-risk-low-bg text-risk-low-text border border-risk-low-border",           icon: <Info size={11} aria-hidden="true" /> },
   clear:  { cls: "bg-surface-border text-content-secondary",                                  icon: null },
@@ -61,7 +61,7 @@ export function ScanQueue({ scans, loading, error, selectedId, onSelect, onRefre
   );
 
   return (
-    <aside className="flex flex-col h-full border-r border-surface-border w-64 shrink-0">
+    <aside className="flex flex-col h-full border-r border-white/10 glass-strong w-64 shrink-0 scene">
       {/* Header */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-surface-border">
         <h2 className="text-sm font-semibold text-content-primary">{QUEUE_TITLE}</h2>
@@ -80,7 +80,7 @@ export function ScanQueue({ scans, loading, error, selectedId, onSelect, onRefre
         <button
           onClick={handleCapture}
           disabled={capturing}
-          className="w-full flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-semibold bg-blue-700 hover:bg-blue-600 disabled:bg-surface-border disabled:text-content-muted text-white transition-colors"
+          className="press w-full flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-semibold bg-gradient-to-b from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 disabled:from-surface-border disabled:to-surface-border disabled:text-content-muted text-white shadow-elev-2 hover:shadow-glow-blue transition-all"
           aria-busy={capturing}
         >
           {capturing
@@ -150,12 +150,12 @@ export function ScanQueue({ scans, loading, error, selectedId, onSelect, onRefre
                 `${SCAN_SUBJECT[s.subject]} — ${s.state}` +
                 (s.overall_risk ? ` — ${RISK_BAND_SHORT[s.overall_risk]} xavf` : "")
               }
-              className={`w-full flex flex-col gap-1 px-3 py-2.5 border-b border-surface-border text-left transition-colors ${
-                isHigh ? "border-l-4 border-l-risk-high-border bg-risk-high-bg/30" : ""
+              className={`tilt-soft relative w-full flex flex-col gap-1 px-3 py-2.5 border-b border-surface-border text-left ${
+                isHigh ? "border-l-4 border-l-risk-high border-l-risk-high-border bg-risk-high-bg/40 halo-high z-10" : ""
               } ${
                 isSelected
-                  ? "bg-surface-hover border-l-4 border-l-blue-500"
-                  : "hover:bg-surface-hover/50"
+                  ? "bg-surface-hover border-l-4 border-l-blue-500 shadow-glow-blue"
+                  : "hover:bg-surface-hover/60 hover:shadow-elev-2"
               }`}
             >
               {/* Row 1: subject + risk badge + time */}

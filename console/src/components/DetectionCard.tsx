@@ -52,14 +52,17 @@ export function DetectionCard({
   const cat    = corrected ?? detection.category;
   const colors = CAT_COLOR[cat];
   const isLow  = detection.score < 0.45;
+  // High-severity categories get a red depth glow so the most dangerous
+  // detections read as the most "raised"/salient cards.
+  const isDanger = cat === "firearm" || cat === "explosive" || cat === "bladed_weapon";
 
   return (
     <div
-      className={`rounded-lg border transition-all ${colors.border} ${
+      className={`card-3d rounded-xl border bg-depth-card ${colors.border} ${
         selected
-          ? "bg-surface-hover ring-1 ring-offset-0"
-          : "bg-surface-card hover:bg-surface-hover"
-      } ${isLow ? "opacity-75" : ""}`}
+          ? "bg-surface-hover ring-1 ring-offset-0 shadow-elev-3"
+          : "bg-surface-card hover:bg-surface-hover shadow-elev-2"
+      } ${isDanger ? "shadow-glow-high" : ""} ${isLow ? "opacity-75" : ""}`}
     >
       {/* Header — the single clickable select target (a real <button>, so no
           nested-interactive antipattern with the controls below) */}

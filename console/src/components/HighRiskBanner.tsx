@@ -65,9 +65,11 @@ export function HighRiskBanner({
     <div
       role="alert"
       aria-live="assertive"
-      className="flex items-center gap-3 px-4 py-2.5 bg-risk-high-bg border-b-2 border-risk-high-border text-risk-high-text animate-slide-in"
+      className="relative z-20 flex items-center gap-3 px-4 py-2.5 bg-risk-high-bg border-b-2 border-risk-high-border text-risk-high-text halo-high animate-slide-in"
     >
-      <ShieldAlert size={22} className="shrink-0 text-red-400 animate-pulse" aria-hidden="true" />
+      <span className="grid place-items-center w-9 h-9 rounded-lg bg-red-950/60 border border-red-700/60 shadow-glow-high shrink-0" aria-hidden="true">
+        <ShieldAlert size={22} className="text-red-400 animate-pulse" />
+      </span>
       <div className="flex-1 min-w-0">
         <p className="text-sm font-bold">{HIGH_ALERT_TITLE}</p>
         <p className="text-sm text-red-200/90">{HIGH_ALERT_BODY}</p>
@@ -75,7 +77,7 @@ export function HighRiskBanner({
 
       <button
         onClick={() => onOpen(alert.scanId)}
-        className="shrink-0 px-3 py-1.5 rounded text-sm font-semibold bg-red-600 hover:bg-red-500 text-white transition-colors"
+        className="press shrink-0 px-3 py-1.5 rounded-lg text-sm font-semibold bg-gradient-to-b from-red-500 to-red-600 hover:from-red-400 hover:to-red-500 text-white shadow-elev-2 transition-all"
       >
         {HIGH_ALERT_OPEN}
       </button>

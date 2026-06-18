@@ -156,7 +156,7 @@ export function DecisionPanel({ scan, operatorId, judgements, annotations, onDec
   // ------------------------------------------------------------------
   if (alreadyDecided || done) {
     return (
-      <div className="rounded-lg border border-surface-border bg-surface-card p-4 flex items-center gap-3">
+      <div className="rounded-xl border border-white/10 glass p-4 flex items-center gap-3 animate-rise-in">
         <CheckCircle2 size={20} className="text-green-400 shrink-0" aria-hidden="true" />
         <div>
           <p className="text-sm font-semibold text-content-primary">{DECISION_ALREADY_MADE}</p>
@@ -172,7 +172,7 @@ export function DecisionPanel({ scan, operatorId, judgements, annotations, onDec
   }
 
   return (
-    <div className="rounded-lg border border-surface-border bg-surface-card p-4 space-y-4">
+    <div className="rounded-xl border border-white/10 glass p-4 space-y-4 shadow-elev-3">
       {/* Header */}
       <div>
         <h2 className="text-sm font-semibold text-content-primary">{DECISION_TITLE}</h2>
@@ -180,14 +180,14 @@ export function DecisionPanel({ scan, operatorId, judgements, annotations, onDec
       </div>
 
       {/* Outcome selector */}
-      <div className="grid grid-cols-2 gap-2">
+      <div className="grid grid-cols-2 gap-2 scene">
         {OUTCOMES.map((o) => (
           <button
             key={o}
             onClick={() => handleOutcomeClick(o)}
             aria-pressed={outcome === o}
-            className={`flex flex-col gap-0.5 p-3 rounded-lg border text-left transition-all ${
-              outcome === o ? OUTCOME_ACTIVE[o] : OUTCOME_STYLE[o]
+            className={`card-3d press flex flex-col gap-0.5 p-3 rounded-xl border text-left ${
+              outcome === o ? `${OUTCOME_ACTIVE[o]} shadow-elev-3` : `${OUTCOME_STYLE[o]} shadow-elev-1`
             }`}
           >
             <span className="text-sm font-semibold">{OUTCOME_LABEL[o]}</span>
@@ -219,10 +219,10 @@ export function DecisionPanel({ scan, operatorId, judgements, annotations, onDec
 
       {/* Confirmation prompt */}
       {confirming && outcome && confirmMessage(outcome) && (
-        <div className={`flex items-start gap-3 p-3 rounded-lg border animate-slide-in ${
+        <div className={`flex items-start gap-3 p-3 rounded-xl border animate-rise-in ${
           outcome === "cleared" && isHighRisk
-            ? "border-red-600 bg-red-900/30"
-            : "border-amber-700 bg-amber-900/20"
+            ? "border-red-600 bg-red-900/30 halo-high"
+            : "border-amber-700 bg-amber-900/20 shadow-glow-medium"
         }`}>
           <AlertTriangle
             size={16}
@@ -236,10 +236,10 @@ export function DecisionPanel({ scan, operatorId, judgements, annotations, onDec
             <div className="flex gap-2 mt-2">
               <button
                 onClick={() => void _submit(outcome)}
-                className={`px-3 py-1.5 rounded text-sm font-semibold text-white transition-colors ${
+                className={`press px-3 py-1.5 rounded-lg text-sm font-semibold text-white shadow-elev-2 transition-all ${
                   outcome === "cleared" && isHighRisk
-                    ? "bg-red-600 hover:bg-red-500"
-                    : "bg-amber-600 hover:bg-amber-500"
+                    ? "bg-gradient-to-b from-red-500 to-red-600 hover:from-red-400 hover:to-red-500"
+                    : "bg-gradient-to-b from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500"
                 }`}
               >
                 {CONFIRM_YES}
@@ -265,9 +265,9 @@ export function DecisionPanel({ scan, operatorId, judgements, annotations, onDec
         <button
           onClick={handleSubmit}
           disabled={!outcome || submitting || noteMissing}
-          className={`w-full py-2.5 rounded-lg text-sm font-semibold transition-all flex items-center justify-center gap-2 ${
+          className={`press w-full py-2.5 rounded-lg text-sm font-semibold transition-all flex items-center justify-center gap-2 ${
             outcome && !submitting && !noteMissing
-              ? "bg-blue-700 hover:bg-blue-600 text-white"
+              ? "bg-gradient-to-b from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 text-white shadow-elev-2 hover:shadow-glow-blue"
               : "bg-surface-border text-content-muted cursor-not-allowed"
           }`}
           aria-busy={submitting}
