@@ -55,6 +55,7 @@ class TestNoOutboundConnectionsOnImport:
         """Importing the FastAPI app must not trigger any outbound connections."""
         with _EgressDetector() as detector:
             import importlib
+
             # Re-import app modules (they're already cached; this just re-evaluates)
             import app.main
             import app.settings
@@ -123,6 +124,99 @@ class TestNoTelemetrySinks:
             assert any(endpoint.startswith(p) for p in allowed_prefixes), (
                 f"OTEL exporter configured to external endpoint: {endpoint!r}"
             )
+
+
+class TestNoUDPOrRawSocketEgress:
+    """UDP / raw-socket egress hardening (BO'SHLIQ-8).
+
+    The TCP ``socket.connect`` patch above does not catch UDP ``sendto`` (which
+    can leak to an external collector without a prior connect), nor a UDP socket
+    that calls ``connect`` to set a default peer. Patch ``sendto`` and assert no
+    external datagram is sent while the app handles a request.
+    """
+
+    @pytest.mark.asyncio
+    async def test_health_check_sends_no_external_udp(self, client):
+        sent_to: list[str] = []
+        original_sendto = socket.socket.sendto
+
+        def _checked_sendto(sock_self, data, *args):
+            # address is the last positional arg (flags optional).
+            address = args[-1] if args else None
+            if isinstance(address, tuple):
+                host = str(address[0])
+                if host not in ALLOWED_HOSTS and not host.startswith("127.") and not host.startswith("::"):
+                    sent_to.append(f"{host}:{address[1]}")
+            return original_sendto(sock_self, data, *args)
+
+        with mock.patch.object(socket.socket, "sendto", _checked_sendto):
+            resp = await client.get("/health")
+        assert resp.status_code == 200
+        assert sent_to == [], f"External UDP datagram(s) sent: {sent_to}"
+
+    def test_app_import_opens_no_raw_socket(self):
+        """Importing the app must not create a raw (AF_PACKET / SOCK_RAW) socket."""
+        raw_sockets: list[str] = []
+        original_socket = socket.socket
+
+        class _TrackingSocket(original_socket):  # type: ignore[misc, valid-type]
+            def __init__(self, family=socket.AF_INET, type=socket.SOCK_STREAM, *a, **k):
+                if type == socket.SOCK_RAW or getattr(socket, "AF_PACKET", None) == family:
+                    raw_sockets.append(f"family={family} type={type}")
+                super().__init__(family, type, *a, **k)
+
+        with mock.patch.object(socket, "socket", _TrackingSocket):
+            import app.main  # noqa: F401 — re-evaluate import under the patch
+            import app.settings  # noqa: F401
+        assert raw_sockets == [], f"Raw socket(s) opened on import: {raw_sockets}"
+
+
+class TestNoAsyncioLoopEgress:
+    """``asyncio`` event-loop level egress hardening (BO'SHLIQ-8).
+
+    A coroutine could bypass the blocking ``socket.connect`` path by using
+    ``loop.create_connection`` / ``loop.create_datagram_endpoint`` directly.
+    Patch those on the running loop and assert the app makes no external call
+    during a request.
+    """
+
+    @pytest.mark.asyncio
+    async def test_no_create_connection_to_external_host(self, client):
+        import asyncio
+
+        loop = asyncio.get_event_loop()
+        attempts: list[str] = []
+        original_create_connection = loop.create_connection
+
+        async def _checked_create_connection(protocol_factory, host=None, port=None, *a, **k):
+            if host and str(host) not in ALLOWED_HOSTS and not str(host).startswith("127."):
+                attempts.append(f"{host}:{port}")
+            return await original_create_connection(protocol_factory, host, port, *a, **k)
+
+        with mock.patch.object(loop, "create_connection", _checked_create_connection):
+            resp = await client.get("/health")
+        assert resp.status_code == 200
+        assert attempts == [], f"loop.create_connection to external host: {attempts}"
+
+    @pytest.mark.asyncio
+    async def test_no_datagram_endpoint_to_external_host(self, client, auth_headers):
+        import asyncio
+
+        loop = asyncio.get_event_loop()
+        attempts: list[str] = []
+        original = loop.create_datagram_endpoint
+
+        async def _checked(protocol_factory, *a, remote_addr=None, **k):
+            if remote_addr and isinstance(remote_addr, tuple):
+                host = str(remote_addr[0])
+                if host not in ALLOWED_HOSTS and not host.startswith("127."):
+                    attempts.append(f"{host}:{remote_addr[1]}")
+            return await original(protocol_factory, *a, remote_addr=remote_addr, **k)
+
+        with mock.patch.object(loop, "create_datagram_endpoint", _checked):
+            resp = await client.get("/v1/scans", headers=auth_headers)
+        # The invariant is no external datagram endpoint — not a 2xx response.
+        assert attempts == [], f"loop.create_datagram_endpoint to external host: {attempts}"
 
 
 class TestDNSResolutionNotLeaking:

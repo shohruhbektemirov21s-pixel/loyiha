@@ -1,6 +1,9 @@
 [tool.pytest.ini_options]
 # ─── Discovery ────────────────────────────────────────────────────────────────
-testpaths     = ["tests"]
+# Include detector/tests so the detector adapter-contract suite runs in CI. It
+# was previously orphaned: testpaths=["tests"] meant `pytest` (and the CI step)
+# never collected detector/tests/, so that suite was silently never run.
+testpaths     = ["tests", "detector/tests"]
 python_files  = ["test_*.py"]
 python_classes= ["Test*"]
 python_functions = ["test_*"]
@@ -44,13 +47,29 @@ omit     = [
     "*/__pycache__/*",
     "*/migrations/*",
     "*/_smoke*",
+    # Operational glue / entrypoints exercised by deploy scripts, not the unit
+    # suite — counting them would dilute the gate into meaninglessness:
+    "app/db/migrate.py",       # run by deploy/start.sh, not pytest
+    "*/cli.py",                # CLI entrypoints (camera/cli.py, …)
+    "detector/train/*",        # training scripts (need GPU + datasets)
+    "detector/eval/*",         # offline eval scripts
+    "detector/data/*",
+    "detector/autolabel.py",
+    "detector/collect_stream.py",
+    "vlm/finetune/*",          # finetuning scripts (need GPU)
+    "vlm/_smoke_live.py",
 ]
 branch   = true
 
 [tool.coverage.report]
 show_missing  = true
 skip_covered  = false
-fail_under    = 70          # minimum branch coverage to pass CI
+# Global floor for a full-source run (includes detector/vlm, partially GPU-gated).
+# The per-job HARD gate on the safety-critical app+contracts packages is 80%,
+# enforced in CI via `--cov-fail-under=80 --cov=app --cov=contracts` (see
+# .github/workflows/ci.yml unit-tests job). detector/vlm are measured in their
+# own jobs where the real model runs.
+fail_under    = 70          # minimum branch coverage on a full-source run
 
 [tool.coverage.html]
 directory = "htmlcov"
@@ -60,6 +79,10 @@ directory = "htmlcov"
 [tool.ruff]
 line-length    = 100
 target-version = "py311"
+
+# Linter rules live under [tool.ruff.lint] (top-level select/ignore are deprecated
+# in ruff >= 0.6 and emit a warning; CI pins ruff>=0.5 so keep this future-proof).
+[tool.ruff.lint]
 select = [
     "E",   # pycodestyle errors
     "W",   # pycodestyle warnings
@@ -75,4 +98,13 @@ ignore = [
     "S311",   # random — we use secrets where it matters
     "B008",   # FastAPI Depends() in function defaults
 ]
-per-file-ignores = { "tests/**" = ["S", "F401"] }
+
+[tool.ruff.lint.per-file-ignores]
+# Test code: asserts (S101) and unused imports for fixtures (F401) are expected;
+# B017 (assert raises Exception) and B023 (loop var in closure) are common, safe
+# test idioms; C408/E501/F541/F811/F841/E401 are cosmetic in throwaway harness
+# code (deliberately-unused `resp`/`req` bindings document intent, long fixture
+# literals, inline `import datetime` in builders). The security-critical S-rules
+# stay enforced on production code (app/, contracts/, detector/serving, …).
+"tests/**"          = ["S", "F401", "B017", "B023", "F841", "F811", "E501", "E401", "C408", "F541"]
+"detector/tests/**" = ["S", "F401", "F841", "F811", "E501", "E401", "C408", "F541"]

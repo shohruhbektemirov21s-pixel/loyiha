@@ -17,7 +17,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from pathlib import Path
 
 from tests.fixtures.dataset import get_evaluation_dataset
@@ -44,7 +44,7 @@ def main() -> None:
     results  = detector.run_dataset(dataset)
     metrics  = compute_metrics(results)
 
-    print(f"\nResults:")
+    print("\nResults:")
     print(f"  Overall recall:    {metrics.overall_recall:.4f}")
     print(f"  Overall precision: {metrics.overall_precision:.4f}")
     print(f"  TP={metrics.n_tp}  FP={metrics.n_fp}  FN={metrics.n_fn}  TN={metrics.n_tn}")
@@ -55,7 +55,7 @@ def main() -> None:
     per_cat_json = {cat.value: recall for cat, recall in metrics.per_category_recall.items()}
 
     output = {
-        "generated_at":        datetime.now(timezone.utc).isoformat(),
+        "generated_at":        datetime.now(UTC).isoformat(),
         "dataset_version":     dataset.version,
         "n_samples":           len(dataset),
         "overall_recall":      metrics.overall_recall,

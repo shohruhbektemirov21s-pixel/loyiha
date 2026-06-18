@@ -19,14 +19,13 @@ import hashlib
 import hmac as hmac_module
 import secrets
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
 
-from app.audit.sink import _compute_hmac, _canonical_payload, _GENESIS_HMAC
-
+from app.audit.sink import _GENESIS_HMAC, _canonical_payload, _compute_hmac
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -34,7 +33,7 @@ from app.audit.sink import _compute_hmac, _canonical_payload, _GENESIS_HMAC
 
 _KEY = bytes.fromhex(secrets.token_hex(32))
 
-_DT = datetime(2025, 1, 15, 10, 0, 0, tzinfo=timezone.utc)
+_DT = datetime(2025, 1, 15, 10, 0, 0, tzinfo=UTC)
 
 
 def _hmac(
@@ -111,7 +110,7 @@ class TestTamperDetection:
 
     def test_mutating_created_at_changes_hmac(self, baseline):
         h1 = _hmac(**baseline)
-        h2 = _hmac(**{**baseline, "created_at": datetime(2020, 1, 1, tzinfo=timezone.utc)})
+        h2 = _hmac(**{**baseline, "created_at": datetime(2020, 1, 1, tzinfo=UTC)})
         assert h1 != h2
 
     def test_mutating_prev_hmac_changes_hmac(self, baseline):

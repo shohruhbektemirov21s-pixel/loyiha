@@ -26,7 +26,6 @@ from playwright.sync_api import Page, expect
 from tests.e2e.conftest import BASE_URL, MOCK_MODE, requires_e2e
 from tests.unit.vlm.test_uzbek_output import FORBIDDEN_PHRASES, check_forbidden_phrases
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

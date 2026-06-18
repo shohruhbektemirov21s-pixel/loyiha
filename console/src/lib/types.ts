@@ -29,6 +29,10 @@ export type ThreatCategory =
 
 export type RiskBand = "clear" | "low" | "medium" | "high";
 
+// Continuous camera analysis may report "unavailable" when the detector/VLM
+// seam is unwired — a fail-safe state, NOT a clearance. Never collapse to "clear".
+export type CameraRiskBand = RiskBand | "unavailable";
+
 export interface StorageRef {
   uri:        string;
   media_type: string;
@@ -256,7 +260,7 @@ export interface WsCameraAnalysis {
   type:          "camera.analysis";
   device:        string;
   ts:            string;
-  risk_band:     RiskBand;
+  risk_band:     CameraRiskBand;
   n_detections:  number;
   summary_uz:    string;
   detections:    CameraDetectionLite[];

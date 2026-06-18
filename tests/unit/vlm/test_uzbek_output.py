@@ -15,7 +15,7 @@ mock that returns fixture verdicts.
 from __future__ import annotations
 
 import re
-from typing import Sequence
+from collections.abc import Sequence
 
 import pytest
 
@@ -26,7 +26,6 @@ from tests.fixtures.builders import (
     make_detection_result,
     make_operator_verdict,
 )
-
 
 # ---------------------------------------------------------------------------
 # Forbidden phrase corpus
@@ -104,15 +103,21 @@ CYRILLIC_PATTERN = re.compile(r"[\u0400-\u04FF]")
 def is_uzbek_latin(text: str, min_ratio: float = 0.60) -> bool:
     """Return True if the text appears to be Uzbek Latin script.
 
-    Uses a heuristic: Cyrillic characters are forbidden; Latin character
-    ratio must be above min_ratio.
+    Heuristic: Cyrillic characters are forbidden outright; of the alphabetic
+    characters present, at least ``min_ratio`` must be Latin (a-z). Text with no
+    letters at all (digits/punctuation only) is tolerated. Previously this
+    function accepted ``min_ratio`` but ignored it and always returned True — it
+    was dead code that could never catch a non-Latin alphabet; it now actually
+    computes and applies the ratio.
     """
     if CYRILLIC_PATTERN.search(text):
         return False
-    letters = re.findall(r"[a-zA-Z]", text)
-    if not letters:
+    alpha = [c for c in text if c.isalpha()]
+    if not alpha:
         return True   # numbers/punctuation only — tolerate
-    return True       # any Latin text with no Cyrillic passes
+    latin = re.findall(r"[a-zA-Z]", text)
+    ratio = len(latin) / len(alpha)
+    return ratio >= min_ratio
 
 def has_cyrillic(text: str) -> bool:
     return bool(CYRILLIC_PATTERN.search(text))
@@ -205,6 +210,27 @@ class TestUzbekLatinScript:
 # ---------------------------------------------------------------------------
 # ── Clear scan advisory language ──
 # ---------------------------------------------------------------------------
+
+class TestIsUzbekLatinHeuristic:
+    """Exercise the is_uzbek_latin helper itself (it was previously dead code —
+    accepted min_ratio but never applied it)."""
+
+    def test_pure_latin_passes(self):
+        assert is_uzbek_latin("Chapda metall buyum aniqlandi")
+
+    def test_cyrillic_fails(self):
+        assert not is_uzbek_latin("Бу ерда буюм")
+
+    def test_digits_and_punct_only_tolerated(self):
+        assert is_uzbek_latin("123 — 45.6 (78)")
+
+    def test_min_ratio_is_applied(self):
+        # A string that is mostly non-Latin alphabetic (Greek) but with no
+        # Cyrillic should fail a high ratio bar — proving min_ratio is honoured.
+        text = "αβγδε ab"  # 5 Greek + 2 Latin alpha → 2/7 ≈ 0.29
+        assert not is_uzbek_latin(text, min_ratio=0.60)
+        assert is_uzbek_latin(text, min_ratio=0.20)
+
 
 class TestClearScanAdvisoryLanguage:
     """A CLEAR verdict must be advisory — it cannot declare the scan safe.

@@ -223,7 +223,7 @@ def test_low_confidence_detection_not_suppressed(detector):
     # This is primarily a contract test — the detector output format must include
     # all detections above the model's own threshold; filtering happens upstream.
     # We validate the contract structure here.
-    from tests.fixtures.builders import make_detection_result, make_detection
+    from tests.fixtures.builders import make_detection, make_detection_result
     det = make_detection(score=0.31, category=ThreatCategory.FIREARM)
     result = make_detection_result(detections=[det])
 

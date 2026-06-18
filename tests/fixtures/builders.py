@@ -8,7 +8,7 @@ keyword arguments.
 from __future__ import annotations
 
 import hashlib
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from uuid import uuid4
 
 from contracts.v1.acquisition import AcquisitionResult
@@ -37,7 +37,7 @@ from contracts.v1.verdict import (
     VerdictRequest,
 )
 
-_NOW = datetime(2025, 1, 15, 10, 0, 0, tzinfo=timezone.utc)
+_NOW = datetime(2025, 1, 15, 10, 0, 0, tzinfo=UTC)
 
 
 # ---------------------------------------------------------------------------

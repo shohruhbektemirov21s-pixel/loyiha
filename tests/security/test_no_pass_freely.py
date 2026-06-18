@@ -16,7 +16,7 @@ Playwright E2E is in tests/e2e/test_no_pass_freely_ui.py.
 from __future__ import annotations
 
 import itertools
-from typing import Sequence
+from collections.abc import Sequence
 
 import pytest
 
@@ -28,11 +28,10 @@ from tests.fixtures.builders import (
     make_operator_verdict,
 )
 from tests.unit.vlm.test_uzbek_output import (
-    FORBIDDEN_PHRASES,
     FORBIDDEN_IMPERATIVE_CLEARANCES,
+    FORBIDDEN_PHRASES,
     check_forbidden_phrases,
 )
-
 
 # ---------------------------------------------------------------------------
 # All texts extracted from a verdict — used to batch-check every field
@@ -171,8 +170,8 @@ class TestOperatorOutcomePreservation:
 
     def test_feedback_is_frozen_after_creation(self):
         """OperatorFeedback is frozen (immutable) — the system cannot overwrite it."""
-        from tests.fixtures.builders import make_operator_feedback
         from contracts.v1.feedback import OperatorOutcome
+        from tests.fixtures.builders import make_operator_feedback
         det = make_detection_result()
         fb  = make_operator_feedback(det, outcome=OperatorOutcome.SEIZED)
         with pytest.raises(Exception):  # ValidationError or TypeError from frozen model

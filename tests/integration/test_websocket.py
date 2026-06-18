@@ -100,7 +100,7 @@ class TestWebSocketAuthentication:
 class TestWebSocketMessageBroadcast:
     def test_scan_event_received_by_lane_subscriber(self, sync_client, operator_token, app):
         """Publishing a scan event must reach a lane subscriber."""
-        from app.api.v1.ws import get_hub   # type: ignore[import]
+        from app.api.v1.ws import get_hub  # type: ignore[import]
 
         try:
             hub = get_hub()
@@ -126,20 +126,36 @@ class TestWebSocketMessageBroadcast:
 
         sub_thread = threading.Thread(target=_subscribe, daemon=True)
         sub_thread.start()
-        time.sleep(0.3)   # let subscriber connect
+        # Poll the hub until the subscriber has registered, instead of a fixed
+        # sleep (deterministic, no flaky timing).
+        for _ in range(100):
+            if any(subs for subs in hub._subscribers.values()):
+                break
+            time.sleep(0.01)
 
         import asyncio
-        asyncio.get_event_loop().run_until_complete(
+        # asyncio.run() instead of the deprecated get_event_loop() — a fresh loop
+        # per broadcast, no reliance on a (possibly closed) ambient loop.
+        asyncio.run(
             hub.broadcast_lane("lane-1", {"type": "scan.received", "scan_id": scan_id, "lane_id": "lane-1"})
         )
         sub_thread.join(timeout=3.0)
 
         if received_msgs:
-            assert received_msgs[0].get("scan_id") == scan_id or received_msgs[0].get("type")
+            # Hardened: the previous `... or received_msgs[0].get("type")` made this a
+            # non-check (any non-empty dict has a truthy "type"). The broadcast carries
+            # this exact scan_id on the canonical "scan.received" envelope — assert it.
+            msg = received_msgs[0]
+            assert msg.get("scan_id") == scan_id, (
+                f"subscriber received a message for the wrong scan: {msg!r}"
+            )
+            assert msg.get("type") == "scan.received", (
+                f"unexpected WS event type: {msg!r}"
+            )
 
     def test_lane_isolation(self, sync_client, operator_token):
         """Lane-1 subscriber must not receive lane-2 events."""
-        from app.api.v1.ws import get_hub   # type: ignore[import]
+        from app.api.v1.ws import get_hub  # type: ignore[import]
 
         try:
             hub = get_hub()
@@ -164,10 +180,13 @@ class TestWebSocketMessageBroadcast:
 
         sub_thread = threading.Thread(target=_subscribe, daemon=True)
         sub_thread.start()
-        time.sleep(0.3)
+        for _ in range(100):
+            if any(subs for subs in hub._subscribers.values()):
+                break
+            time.sleep(0.01)
 
         import asyncio
-        asyncio.get_event_loop().run_until_complete(
+        asyncio.run(
             hub.broadcast_lane("lane-2", {"type": "scan.received", "scan_id": str(uuid4()), "lane_id": "lane-2"})
         )
         sub_thread.join(timeout=2.0)

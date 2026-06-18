@@ -33,9 +33,9 @@ from __future__ import annotations
 import json
 import os
 from collections import defaultdict
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Iterator
 
 import pytest
 
@@ -62,6 +62,18 @@ HIGH_RISK_CATEGORIES = {
     ThreatCategory.NARCOTICS,
 }
 RECALL_GATE_HIGH_RISK = float(os.environ.get("XRAY_GATE_RECALL_HIGH_RISK", "0.97"))
+
+
+# ---------------------------------------------------------------------------
+# Determinism: the mock detector uses random.random() to simulate misses. Seed
+# the RNG before every test so a parametrised mock_fn_rate run is reproducible
+# and never flakes the gate (a fixed seed -> a fixed set of synthetic misses).
+# ---------------------------------------------------------------------------
+@pytest.fixture(autouse=True)
+def _seed_rng():
+    import random
+    random.seed(1707)
+    yield
 
 
 # ---------------------------------------------------------------------------

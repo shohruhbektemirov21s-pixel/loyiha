@@ -238,6 +238,18 @@ def create_app() -> FastAPI:
 
     from sqlalchemy.exc import IntegrityError, OperationalError
 
+    from app.db.session import DatabaseNotInitialised
+
+    @app.exception_handler(DatabaseNotInitialised)
+    async def _db_not_initialised(_req: Request, exc: DatabaseNotInitialised) -> JSONResponse:
+        # A DB-backed route was hit while persistence is unwired (stub mode).
+        # Fail-closed: 503 (unavailable), never 500 (which reads as "broken").
+        log.warning("DB-backed route hit but persistence not wired: %s", exc)
+        return JSONResponse(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            content={"error": "db_unavailable", "detail": "Persistence layer is not configured."},
+        )
+
     @app.exception_handler(IntegrityError)
     async def _db_integrity(_req: Request, exc: IntegrityError) -> JSONResponse:
         log.warning("DB integrity error: %s", exc.orig)

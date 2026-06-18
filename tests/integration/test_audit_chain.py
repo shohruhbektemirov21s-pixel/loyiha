@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import os
 import secrets
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from uuid import uuid4
 
 import pytest
@@ -36,16 +36,16 @@ class InMemoryAuditSink:
     """Records events in a list for inspection in tests."""
 
     def __init__(self, hmac_key: bytes) -> None:
-        from app.audit.sink import _GENESIS_HMAC, _compute_hmac, _canonical_payload
+        from app.audit.sink import _GENESIS_HMAC, _canonical_payload, _compute_hmac
         self._key      = hmac_key
         self._events: list[dict] = []
         self._last_hmac = _GENESIS_HMAC
         self._last_id   = None
 
     async def record(self, event_type: str, *, scan_id=None, **fields) -> None:
-        from app.audit.sink import _compute_hmac, _canonical_payload
+        from app.audit.sink import _canonical_payload, _compute_hmac
         eid        = uuid4()
-        created_at = datetime.now(timezone.utc)
+        created_at = datetime.now(UTC)
         canonical  = _canonical_payload(fields)
         hmac       = _compute_hmac(
             self._key, self._last_hmac, eid, event_type,
@@ -68,8 +68,9 @@ class InMemoryAuditSink:
         return list(self._events)
 
     def verify(self) -> tuple[bool, str]:
-        from app.audit.sink import _GENESIS_HMAC, _compute_hmac, _canonical_payload
         import hmac as hmac_mod
+
+        from app.audit.sink import _GENESIS_HMAC, _canonical_payload, _compute_hmac
         prev_hmac = _GENESIS_HMAC
         prev_id   = None
         for i, ev in enumerate(self._events):
@@ -166,9 +167,14 @@ class TestAuditAPIEndpoints:
 
     @pytest.mark.asyncio
     async def test_audit_verify_endpoint_exists(self, client, admin_headers):
+        # FIXED: unwired DB now maps to 503 (DatabaseNotInitialised -> 503 in app.main),
+        # so this fails closed cleanly instead of leaking a 500.
         resp = await client.get("/v1/admin/audit/verify", headers=admin_headers)
-        # 200 (verified), 403 (wrong role), 500 (DB not wired in stub mode), 501 (stub)
-        assert resp.status_code in (200, 403, 500, 501)
+        # A server error (500) is NOT a valid outcome. Expect a clean
+        # 200 (verified), 403 (wrong role), 501 (stub), or 503 (db unavailable).
+        assert resp.status_code in (200, 403, 501, 503), (
+            f"audit verify must fail closed, not 500; got {resp.status_code}: {resp.text}"
+        )
 
     @pytest.mark.asyncio
     async def test_audit_verify_requires_admin_role(self, client, auth_headers):

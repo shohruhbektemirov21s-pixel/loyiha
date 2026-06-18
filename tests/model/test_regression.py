@@ -26,7 +26,7 @@ from uuid import uuid4
 import pytest
 
 from contracts.v1.common import ThreatCategory
-from tests.fixtures.dataset import MockLabeledDataset, LabeledSample
+from tests.fixtures.dataset import LabeledSample, MockLabeledDataset
 
 REGRESSION_FIXTURES_PATH = os.environ.get("XRAY_REGRESSION_FIXTURES", "")
 
@@ -148,9 +148,7 @@ class TestConfidenceCalibration:
 
         Uses mock dataset; in real mode the real dataset + real detector is used.
         """
-        from tests.model.test_detector_metrics import (
-            DetectorUnderTest, compute_metrics
-        )
+        from tests.model.test_detector_metrics import DetectorUnderTest, compute_metrics
 
         ds      = MockLabeledDataset()
         det     = DetectorUnderTest(mock_fn_rate=0.0)

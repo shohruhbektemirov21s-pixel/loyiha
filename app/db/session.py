@@ -76,15 +76,23 @@ async def close_db() -> None:
         log.info("DB engine disposed")
 
 
+class DatabaseNotInitialised(RuntimeError):
+    """The DB layer was never wired (no XRAY_DB_URL). A DB-backed route was hit.
+
+    Mapped to HTTP 503 (not 500): the persistence layer is *unavailable*, not
+    broken. Fail-closed — the client is told to retry, not shown a faked result.
+    """
+
+
 def get_engine() -> AsyncEngine:
     if _engine is None:
-        raise RuntimeError("DB not initialised. Call init_db() in the lifespan.")
+        raise DatabaseNotInitialised("DB not initialised. Call init_db() in the lifespan.")
     return _engine
 
 
 def get_session_factory() -> async_sessionmaker[AsyncSession]:
     if _session_factory is None:
-        raise RuntimeError("DB not initialised. Call init_db() in the lifespan.")
+        raise DatabaseNotInitialised("DB not initialised. Call init_db() in the lifespan.")
     return _session_factory
 
 
@@ -106,4 +114,11 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
             raise
 
 
-__all__ = ["init_db", "close_db", "get_db", "get_engine", "get_session_factory"]
+__all__ = [
+    "init_db",
+    "close_db",
+    "get_db",
+    "get_engine",
+    "get_session_factory",
+    "DatabaseNotInitialised",
+]

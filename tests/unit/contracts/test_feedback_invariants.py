@@ -14,7 +14,7 @@ Critical invariants:
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from uuid import uuid4
 
 import pytest
@@ -36,7 +36,7 @@ from tests.fixtures.builders import (
     make_operator_feedback,
 )
 
-_NOW = datetime(2025, 1, 15, 10, 0, 0, tzinfo=timezone.utc)
+_NOW = datetime(2025, 1, 15, 10, 0, 0, tzinfo=UTC)
 
 
 class TestReviewReferentialIntegrity:

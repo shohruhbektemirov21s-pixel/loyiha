@@ -9,6 +9,7 @@
 import type {
   ThreatCategory,
   RiskBand,
+  CameraRiskBand,
   ScanState,
   DetectionJudgement,
   OperatorOutcome,
@@ -65,6 +66,13 @@ export const RISK_BAND_SHORT: Record<RiskBand, string> = {
   low:    "Past",
   medium: "O'rtacha",
   high:   "Yuqori",
+};
+
+// Camera continuous analysis: same bands + a fail-safe "unavailable" state.
+// "unavailable" means the detector/VLM seam is unwired — it is NOT a clearance.
+export const CAMERA_RISK_SHORT: Record<CameraRiskBand, string> = {
+  ...RISK_BAND_SHORT,
+  unavailable: "Tahlil mavjud emas",
 };
 
 // ⚠ Explicit: clear is NOT a pass decision — system says no finding; operator decides

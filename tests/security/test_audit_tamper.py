@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import secrets
 from copy import copy
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -25,11 +25,11 @@ import pytest
 
 from app.audit.sink import _GENESIS_HMAC, _canonical_payload, _compute_hmac
 from tests.unit.audit.test_hmac_chain import (
-    _FakeEvent,
-    _build_chain,
-    _verify_fake_chain,
-    _KEY,
     _DT,
+    _KEY,
+    _build_chain,
+    _FakeEvent,
+    _verify_fake_chain,
 )
 
 
@@ -129,7 +129,7 @@ class TestChainIntegrityAfterTampering:
         chain = _build_chain(5)
         ev = chain[2]
         chain[2] = _FakeEvent(
-            **{**ev.__dict__, "created_at": datetime(2020, 1, 1, tzinfo=timezone.utc)}
+            **{**ev.__dict__, "created_at": datetime(2020, 1, 1, tzinfo=UTC)}
         )
         ok, _ = _verify_fake_chain(chain)
         assert not ok

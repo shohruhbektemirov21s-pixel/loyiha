@@ -3,7 +3,7 @@ import {
   Video, VideoOff, Play, Square, Loader2, AlertTriangle, Info,
   CheckCircle2, ShieldAlert,
 } from "lucide-react";
-import type { RiskBand, WsCameraAnalysis, WsMessage } from "../lib/types";
+import type { CameraRiskBand, WsCameraAnalysis, WsMessage } from "../lib/types";
 import {
   cameraLiveUrl, startCameraStream, stopCameraStream, getCameraStreamStatus,
   type CameraStreamStatus, ApiError,
@@ -14,17 +14,20 @@ import {
   LIVE_TITLE, LIVE_START, LIVE_STOP, LIVE_STARTING, LIVE_STOPPING,
   LIVE_RUNNING, LIVE_STOPPED, LIVE_NO_SIGNAL, LIVE_DEVICE, LIVE_CADENCE,
   LIVE_FRAMES, LIVE_LAST_ANALYSIS, LIVE_ANALYSIS_TITLE, LIVE_NO_ANALYSIS,
-  LIVE_DETECTIONS, LIVE_ERROR, RISK_BAND_SHORT, THREAT_CATEGORY,
+  LIVE_DETECTIONS, LIVE_ERROR, CAMERA_RISK_SHORT, THREAT_CATEGORY,
 } from "../lib/uz";
 
 const MAX_FEED = 8;
 
 // Risk styling — colour + icon + text together (never colour-only).
-const RISK_UI: Record<RiskBand, { cls: string; icon: React.ReactNode }> = {
+// "unavailable" (detector/VLM unwired) is a distinct neutral/warning state,
+// never styled like "clear" — the operator must not read it as a clearance.
+const RISK_UI: Record<CameraRiskBand, { cls: string; icon: React.ReactNode }> = {
   high:   { cls: "bg-risk-high-bg border-risk-high-border text-risk-high-text",     icon: <ShieldAlert size={14} aria-hidden="true" /> },
   medium: { cls: "bg-risk-medium-bg border-risk-medium-border text-risk-medium-text", icon: <AlertTriangle size={14} aria-hidden="true" /> },
   low:    { cls: "bg-risk-low-bg border-risk-low-border text-risk-low-text",          icon: <Info size={14} aria-hidden="true" /> },
   clear:  { cls: "bg-risk-clear-bg border-risk-clear-border text-risk-clear-text",    icon: <CheckCircle2 size={14} aria-hidden="true" /> },
+  unavailable: { cls: "bg-surface-card border-surface-border text-content-secondary", icon: <AlertTriangle size={14} aria-hidden="true" /> },
 };
 
 interface AnalysisItem extends WsCameraAnalysis {
@@ -201,7 +204,7 @@ export function LiveCamera() {
                   >
                     <div className="flex items-center gap-1.5 font-semibold">
                       {ui.icon}
-                      <span>{RISK_BAND_SHORT[a.risk_band]}</span>
+                      <span>{CAMERA_RISK_SHORT[a.risk_band]}</span>
                       <span className="ml-auto font-mono text-xs opacity-80">
                         {new Date(a.ts).toLocaleTimeString("uz-Latn-UZ")}
                       </span>

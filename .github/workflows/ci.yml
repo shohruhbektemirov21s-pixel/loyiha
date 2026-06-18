@@ -16,12 +16,69 @@ env:
 
 jobs:
   # ──────────────────────────────────────────────────────────────────────────
-  # Job 1: Fast unit + security + contract tests (no GPU, no DB)
-  # Target: < 2 minutes
+  # Job 0: Lint (ruff) — the bandit S-rules are configured but were never run.
+  # Fast, no deps beyond ruff. Fails the build on a security-lint or style error.
+  # ──────────────────────────────────────────────────────────────────────────
+  lint:
+    name: Ruff lint (incl. bandit S-rules)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install ruff
+        run: pip install "ruff>=0.6"
+      # ── Blocking gate ──────────────────────────────────────────────────────
+      # Enforce the full ruleset (E/W/F/I/UP/B/C4/S incl. bandit security) on the
+      # code we actively keep clean: the test suite and the detector adapter
+      # tests. A regression here fails the build. The [tool.ruff.lint] config
+      # (pyproject.toml) drives the rules; without this step the S-rules were
+      # dead config.
+      - name: ruff check (blocking — tests must stay clean)
+        run: ruff check tests/ detector/tests/
+      # ── Report-only gate ───────────────────────────────────────────────────
+      # The production packages (app/, contracts/, detector/serving, camera/,
+      # vlm/, …) carry pre-existing lint/security debt (E501, F401, S110/S108/
+      # S105, …). We surface it on every run via GitHub annotations but do NOT
+      # block the build on it yet — paying it down is a separate, owned effort
+      # (the QA test pass is forbidden from editing production source). Flip
+      # `continue-on-error` to false per-package as each is brought to zero.
+      - name: ruff check (report-only — production debt, non-blocking)
+        continue-on-error: true
+        run: ruff check . --output-format=github
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Job 1: Fast unit + security + contract tests + detector adapter contract.
+  # Runs a throwaway Postgres so the requires_db tests (lane RBAC, audit chain,
+  # decision CAS, threshold bounds) actually execute and count toward coverage.
+  # HARD coverage gate: contracts >= 80% (safety-critical schemas); app+contracts
+  # combined >= 60% (ratchet — must not regress; raise as integration grows).
+  # Target: < 3 minutes
   # ──────────────────────────────────────────────────────────────────────────
   unit-tests:
-    name: Unit + Security + Contracts
+    name: Unit + Security + Contracts (+ coverage gate)
     runs-on: ubuntu-22.04
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: xray
+          POSTGRES_PASSWORD: xray
+          POSTGRES_DB: xray_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U xray"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      # DB-backed tests connect here; absent this var they skip (kept honest).
+      XRAY_TEST_DB_URL: "postgresql+asyncpg://xray:xray@localhost:5432/xray_test"
 
     steps:
       - uses: actions/checkout@v4
@@ -33,19 +90,33 @@ jobs:
           cache: pip
 
       - name: Install dependencies
-        run: pip install -r requirements.txt pytest pytest-asyncio pytest-cov httpx
+        run: pip install -r requirements.txt pytest pytest-asyncio pytest-cov httpx asyncpg
 
       - name: Generate test secrets
         run: |
           echo "XRAY_JWT_SECRET=$(python -c 'import secrets; print(secrets.token_hex(32))')" >> $GITHUB_ENV
           echo "XRAY_AUDIT_HMAC_KEY=$(python -c 'import secrets; print(secrets.token_hex(32))')" >> $GITHUB_ENV
 
-      - name: Run unit tests
+      - name: Run unit + security + contract tests (with coverage)
         run: |
-          pytest tests/unit/ tests/security/ \
-            -m "not requires_real_detector and not requires_real_vlm and not requires_db and not e2e" \
+          # Include the DB-backed unit/security tests (lane RBAC, decision CAS,
+          # audit mutation) — XRAY_TEST_DB_URL is wired to the throwaway Postgres
+          # above, so they actually run here and count toward coverage instead of
+          # skipping. Combined app+contracts gate is a non-regressing RATCHET:
+          # raise it as integration coverage lands; it must never drop.
+          pytest tests/unit/ tests/security/ detector/tests/ \
+            -m "not requires_real_detector and not requires_real_vlm and not e2e" \
             --cov=app --cov=contracts --cov-report=xml --cov-report=term-missing \
+            --cov-fail-under=60 \
             -v --tb=short
+
+      - name: Enforce hard coverage gate on contracts (>= 85%)
+        run: |
+          # contracts are the safety-critical wire schemas — they MUST stay
+          # well-covered. A dedicated report gates them independently of app.
+          # Measured at ~94% by the unit suite; gate set to 85 to leave headroom
+          # while still failing closed on any real regression.
+          coverage report --include="contracts/*" --fail-under=85
 
       - name: Upload coverage
         uses: codecov/codecov-action@v4
@@ -55,13 +126,31 @@ jobs:
           fail_ci_if_error: false
 
   # ──────────────────────────────────────────────────────────────────────────
-  # Job 2: Integration tests (FastAPI stub mode, no GPU)
+  # Job 2: Integration tests (FastAPI, real Postgres for DB-backed paths).
   # Target: < 5 minutes
   # ──────────────────────────────────────────────────────────────────────────
   integration-tests:
-    name: Integration Tests (stub mode)
+    name: Integration Tests
     runs-on: ubuntu-22.04
     needs: unit-tests
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: xray
+          POSTGRES_PASSWORD: xray
+          POSTGRES_DB: xray_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U xray"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      XRAY_TEST_DB_URL: "postgresql+asyncpg://xray:xray@localhost:5432/xray_test"
 
     steps:
       - uses: actions/checkout@v4
@@ -73,23 +162,58 @@ jobs:
           cache: pip
 
       - name: Install dependencies
-        run: pip install -r requirements.txt pytest pytest-asyncio httpx
+        run: pip install -r requirements.txt pytest pytest-asyncio httpx asyncpg
 
       - name: Generate test secrets
         run: |
           echo "XRAY_JWT_SECRET=$(python -c 'import secrets; print(secrets.token_hex(32))')" >> $GITHUB_ENV
           echo "XRAY_AUDIT_HMAC_KEY=$(python -c 'import secrets; print(secrets.token_hex(32))')" >> $GITHUB_ENV
 
-      - name: Run integration tests
+      - name: Install coverage
+        run: pip install pytest-cov
+
+      - name: Run integration + unit + security (with combined coverage gate)
         run: |
-          pytest tests/integration/ \
-            -m "not requires_db and not e2e" \
+          # This job has the real Postgres wired (XRAY_TEST_DB_URL above), so the
+          # DB-backed paths (lane RBAC, decision CAS, audit mutation, admin
+          # thresholds) execute and the FULL app surface is exercised. This is the
+          # right place for the safety-critical >= 75% combined app+contracts gate
+          # (target 80% — ratchet upward as paths land; never let it drop). The
+          # unit-tests job keeps its own faster, lower ratchet without integration.
+          pytest tests/integration/ tests/unit/ tests/security/ \
+            -m "not e2e and not requires_real_detector and not requires_real_vlm" \
+            --cov=app --cov=contracts --cov-report=xml --cov-report=term-missing \
+            --cov-fail-under=75 \
             -v --tb=short
 
   # ──────────────────────────────────────────────────────────────────────────
-  # Job 3: Model metric gate tests (mock dataset, no GPU)
+  # Job 3: Frontend console unit tests (vitest, jsdom — no browser).
+  # Covers WS message parsing, risk_band mapping, detection sorting, and the
+  # "no forbidden clearance phrase in any UI string" safety invariant.
+  # ──────────────────────────────────────────────────────────────────────────
+  console-tests:
+    name: Console Unit Tests (vitest)
+    runs-on: ubuntu-22.04
+
+    defaults:
+      run:
+        working-directory: console
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: console/package-lock.json
+      - name: Install deps
+        run: npm ci || npm install
+      - name: Run vitest
+        run: npm run test
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Job 4: Model metric gate tests (mock dataset, no GPU).
   # The gate logic is tested, not real model recall.
-  # Target: < 3 minutes
   # ──────────────────────────────────────────────────────────────────────────
   model-gate-logic:
     name: Model Gate Logic (mock dataset)
@@ -120,7 +244,7 @@ jobs:
           XRAY_GATE_PRECISION: "0.80"
 
   # ──────────────────────────────────────────────────────────────────────────
-  # Job 4: Performance overhead tests (stub mode — framework overhead only)
+  # Job 5: Performance overhead tests (stub mode — framework overhead only)
   # ──────────────────────────────────────────────────────────────────────────
   perf-overhead:
     name: API Framework Overhead
@@ -153,7 +277,35 @@ jobs:
           XRAY_PERF_TESTS: "true"
 
   # ──────────────────────────────────────────────────────────────────────────
-  # Job 5 (nightly): Real model recall gates — requires self-hosted GPU runner
+  # Job 6 (optional): Playwright E2E. Gated behind the repo variable
+  # XRAY_E2E_ENABLED because it needs a running console + API + browser binaries
+  # — not available on a plain runner without extra provisioning. The e2e tests
+  # themselves skip on the same flag, so a green CI never silently means "E2E
+  # passed" — it means "E2E not run". Set vars.XRAY_E2E_ENABLED=true (and provide
+  # a live stack via vars.XRAY_E2E_BASE_URL) to enable.
+  # ──────────────────────────────────────────────────────────────────────────
+  e2e:
+    name: Playwright E2E (optional)
+    runs-on: ubuntu-22.04
+    needs: integration-tests
+    if: ${{ vars.XRAY_E2E_ENABLED == 'true' }}
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install dependencies
+        run: pip install -r requirements.txt pytest pytest-asyncio playwright && python -m playwright install --with-deps chromium
+      - name: Run E2E suite
+        env:
+          XRAY_E2E_ENABLED: "true"
+          XRAY_E2E_BASE_URL: ${{ vars.XRAY_E2E_BASE_URL }}
+        run: pytest tests/e2e/ -m e2e -v --tb=short
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Job 7 (nightly): Real model recall gates — requires self-hosted GPU runner
   # and labeled dataset. Only runs on main branch, not PRs.
   # ──────────────────────────────────────────────────────────────────────────
   model-recall-gates:

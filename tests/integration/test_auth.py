@@ -27,7 +27,6 @@ from app.auth.backend import (
 )
 from app.db.models import OperatorRole
 
-
 # ---------------------------------------------------------------------------
 # Unit: password hashing
 # ---------------------------------------------------------------------------
@@ -101,7 +100,6 @@ class TestJWTRoundTrip:
 
     def test_wrong_secret_raises(self):
         from jose import JWTError
-        import os
         token = create_access_token(str(uuid4()), "alice", OperatorRole.OPERATOR, [])
         # Temporarily change the secret to simulate wrong key
         original = os.environ.get("XRAY_JWT_SECRET")
@@ -117,6 +115,7 @@ class TestJWTRoundTrip:
         """Unsigned (alg:none) tokens must be rejected by decode_access_token."""
         import base64
         import json
+
         from jose import JWTError
 
         header  = base64.urlsafe_b64encode(b'{"alg":"none","typ":"JWT"}').rstrip(b"=").decode()
@@ -158,8 +157,10 @@ class TestLoginEndpoint:
     @pytest.mark.asyncio
     async def test_login_missing_fields_returns_422(self, client):
         resp = await client.post("/v1/auth/login", json={"username": "alice"})
-        # 422 = body validation fails before handler; 500 = DB stub raises before validation
-        assert resp.status_code in (422, 500)
+        # 422 = body validation fails before handler; 503 = DB unwired in stub mode
+        # (login needs the operator store). Never 500 — an unwired DB is *unavailable*,
+        # not *broken*. See DatabaseNotInitialised -> 503 mapping in app.main.
+        assert resp.status_code in (422, 503)
 
     @pytest.mark.asyncio
     async def test_login_response_does_not_leak_password_hash(self, client):
@@ -197,7 +198,7 @@ class TestRBACRoutes:
     @pytest.mark.asyncio
     async def test_admin_can_reach_admin_list_endpoint(self, client, admin_headers):
         resp = await client.get("/v1/admin/operators", headers=admin_headers)
-        assert resp.status_code in (200, 500, 501)   # 500/501 = DB not wired in stub mode
+        assert resp.status_code in (200, 503, 501)   # 503/501 = DB not wired in stub mode (fail-closed, never 500)
 
     @pytest.mark.asyncio
     async def test_unauthenticated_scan_list_rejected(self, client):

@@ -18,8 +18,8 @@ from pydantic import ValidationError
 from contracts.v1.common import RiskBand, ThreatCategory
 from contracts.v1.verdict import (
     DetectionVerdict,
-    OperatorVerdict,
     Locale,
+    OperatorVerdict,
     validate_referential_integrity,
 )
 from tests.fixtures.builders import (

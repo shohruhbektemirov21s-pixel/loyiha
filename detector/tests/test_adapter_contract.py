@@ -11,26 +11,32 @@ Also exercises the live FastAPI seam end-to-end via dependency_overrides.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
 
-from contracts.v1 import (
-    AcquisitionResult, ImageFrame, ImageModality, ModelProvenance, ScanSubject,
-    StorageRef, ThreatCategory,
-)
-from contracts.v1.detection import DetectionStatus
-
 from app.deps import provide_detector
 from app.main import create_app
-
+from contracts.v1 import (
+    AcquisitionResult,
+    ImageFrame,
+    ImageModality,
+    ModelProvenance,
+    ScanSubject,
+    StorageRef,
+    ThreatCategory,
+)
+from contracts.v1.detection import DetectionStatus
 from detector.serving.adapter import WeaponsDetector
 from detector.serving.predictor import (
-    ConstantLoader, RawDetection, RaisingPredictor, StaticPredictor,
+    ConstantLoader,
+    RaisingPredictor,
+    RawDetection,
+    StaticPredictor,
 )
 
-NOW = datetime(2026, 6, 15, 9, 0, tzinfo=timezone.utc)
+NOW = datetime(2026, 6, 15, 9, 0, tzinfo=UTC)
 SHA = "b" * 64
 W, H = 2048, 1024
 

@@ -17,7 +17,6 @@ from uuid import uuid4
 import pytest
 import pytest_asyncio
 
-
 # ---------------------------------------------------------------------------
 # Routes that require authentication
 # ---------------------------------------------------------------------------
@@ -122,8 +121,9 @@ class TestForgedTokenRejected:
 
     @pytest.mark.asyncio
     async def test_expired_token_rejected(self, client):
-        import jwt as pyjwt
         import os
+
+        import jwt as pyjwt
         secret = os.environ.get("XRAY_JWT_SECRET", "test")
         expired = pyjwt.encode(
             {
@@ -143,7 +143,8 @@ class TestForgedTokenRejected:
     @pytest.mark.asyncio
     async def test_alg_none_attack_rejected(self, client):
         """'alg: none' attack — unsigned token must be rejected."""
-        import base64, json
+        import base64
+        import json
         header  = base64.urlsafe_b64encode(b'{"alg":"none","typ":"JWT"}').rstrip(b"=")
         payload = base64.urlsafe_b64encode(
             json.dumps({"sub": "attacker", "role": "admin", "exp": int(time.time()) + 9999}).encode()

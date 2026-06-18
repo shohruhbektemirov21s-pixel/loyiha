@@ -22,7 +22,7 @@ import asyncio
 import os
 import statistics
 import time
-from typing import Callable, Awaitable
+from collections.abc import Awaitable, Callable
 from uuid import uuid4
 
 import pytest
@@ -106,8 +106,8 @@ class TestAPIFrameworkOverhead:
 
     @pytest.mark.asyncio
     async def test_feedback_submission_p95_under_sla(self, client, auth_headers):
-        from tests.fixtures.builders import make_detection_result, make_operator_feedback
         from contracts.v1.feedback import OperatorOutcome
+        from tests.fixtures.builders import make_detection_result, make_operator_feedback
         det     = make_detection_result()
         fb      = make_operator_feedback(det, outcome=OperatorOutcome.INSPECTED)
         payload = fb.model_dump(mode="json")
@@ -202,7 +202,7 @@ class TestVLMLatencyGates:
 
     @pytest.fixture
     def verdict_request(self):
-        from tests.fixtures.builders import make_verdict_request, make_detection_result
+        from tests.fixtures.builders import make_detection_result, make_verdict_request
         return make_verdict_request(make_detection_result())
 
     @pytest.mark.asyncio
