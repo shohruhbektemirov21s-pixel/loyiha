@@ -42,13 +42,45 @@ log = logging.getLogger("xray.vlm.screen")
 # Promptlar — xray_cargo_screen.py dan qayta ishlatilgan (yaxshi ishlaydi).
 # SYS / SHOT / USER aynan prototipdagidek: vagon turi, asosiy yuk va
 # QORADORI/QUROL/TAMAKI/BOSHQA = BOR/SHUBHALI/YO'Q + XAVF.
+#
+# TANK OVER-PREDICTION TUZATISHI: 4B VLM yon ko'rinishdagi har qanday cho'zinchoq
+# yuk konturini "tank/silindr" deb noto'g'ri o'qib, ko'p vagonni xato "Tank vagoni"
+# deb belgilardi (yopiq quti vagon, ochiq bortli vagon, konteyner ham). Tuzatish:
+#   1) aniq VAGON TAKSONOMIYASI berildi (model tanlash uchun ro'yxatga ega bo'ldi);
+#   2) KUCHLI ANTI-BIAS qoida: "tank" deb faqat aniq SILINDR/OVAL idish ko'rinsagina;
+#   3) model AVVAL ko'rgan shaklini TAVSIF da asoslab, KEYIN vagon turini yozadi.
+# Eslatma: SYS dan eski misoldagi "sanoat suyuqligi/tanki" iborasi olib tashlandi —
+# u o'zi tank tomon turtki berardi. Kontrabanda mantig'i O'ZGARMAGAN.
 # ---------------------------------------------------------------------------
 SYS = (
     "Siz bojxona temir-yo'l rentgen (X-ray) skanlarini tahlil qiluvchi mutaxassisiz. "
-    "Tasvirlar yon ko'rinishdagi vagonlar. Vazifa: vagon turi va asosiy yukni aniqlash, "
-    "hamda kontrabanda belgilarini baholash.\n"
-    "QAT'IY QOIDALAR:\n"
-    "- Oddiy yuk (avtomobil, sanoat suyuqligi/tanki, qop-jako, g'altak, metall buyum) "
+    "Tasvirlar yon ko'rinishdagi vagonlar. Vazifa: vagon turini ANIQ ajratish, asosiy "
+    "yukni aniqlash, hamda kontrabanda belgilarini baholash.\n"
+    "\n"
+    "VAGON TURLARI TAKSONOMIYASI (faqat shu ro'yxatdan birini tanla, eng mosini):\n"
+    "- Ochiq bortli vagon (gondola): yuqorisi OCHIQ, atrofida past/baland bortlar; "
+    "yuk tepadan ko'rinadi (ruda, ko'mir, metall, yog'och, g'altak).\n"
+    "- Yopiq (kryti) vagon: to'liq BERK to'rtburchak QUTI shaklida, yon devorlari va "
+    "tomi bor, o'rtasida suriladigan eshik; ichida qoplar, yashiklar, palletlar.\n"
+    "- Sisterna / tank vagon: FAQAT aniq SILINDR yoki OVAL (tuxumsimon) tank IDISHI "
+    "ko'ringanda — yumaloq uchli, gorizontal yotgan idish, ustida lyuk/quvur.\n"
+    "- Platforma + konteyner(lar): tekis platforma ustida to'g'ri burchakli, tekis "
+    "tomli TO'RTBURCHAK konteyner(lar).\n"
+    "- Hopper vagon: pastga tomon TORAYIB, ostidan to'kiluvchi voronka (bunkerlar) "
+    "ko'rinadi (sochiluvchi yuk: don, sement, ruda).\n"
+    "- Avtomobil tashuvchi: ichida AVTOMOBIL(lar) shakli aniq ko'rinadi.\n"
+    "Agar hech biriga aniq mos kelmasa: \"aniqlanmadi\" deb yoz, taxmin qilma.\n"
+    "\n"
+    "TANK ANTI-BIAS (JUDA MUHIM):\n"
+    "- Sisterna/tank deb FAQAT aniq SILINDRIK yoki OVAL tank idishi ko'ringandagina yoz.\n"
+    "- To'rtburchak konteyner, berk quti vagon, yashik, ochiq yuk, qop, g'altak, "
+    "avtomobil, yoki shakli noaniq bo'lsa — bu TANK EMAS. Bunday holda boshqa turni tanla.\n"
+    "- Shaklga shoshilib 'tank' DEMA. Cho'zinchoq yoki katta bo'lgani uchun tank emas.\n"
+    "- Ishonchsiz bo'lsang: ko'rgan shaklni TAVSIF da batafsil bayon qil, keyin eng mos "
+    "turni tanla; tank ekaniga aniq dalil bo'lmasa, tank dema.\n"
+    "\n"
+    "KONTRABANDA QAT'IY QOIDALARI:\n"
+    "- Oddiy yuk (avtomobil, qop-jako, g'altak, metall buyum, suyuqlik idishi) "
     "KONTRABANDA EMAS — bunday holda barcha kontrabanda bandlari YO'Q.\n"
     "- Faqat ko'zga aniq tashlanadigan, tasvirlab bera oladigan dalil bo'lsagina BOR yoki SHUBHALI de.\n"
     "- Yagona energiyali X-ray faqat SHAKLNI ko'rsatadi, material turini emas. Narkotikni "
@@ -58,15 +90,19 @@ SYS = (
 )
 SHOT = (
     "Quyida FAQAT format namunasi (qiymatlarni ko'chirma, har bir maydonni o'zing rasmga qarab to'ldir):\n"
-    "TAVSIF: <1-2 jumla: rasmda aniq nima ko'rinmoqda — vagon tuzilishi, yuk shakli, zichlik, anomaliya bo'lsa>\n"
-    "VAGON_TURI: <rasmda ko'rgan vagon turi>\n"
+    "TAVSIF: <1-2 jumla: rasmda aniq nima ko'rinmoqda — vagon SHAKLI (ochiq/berk quti/"
+    "silindr-tank/platforma+konteyner/hopper/avtomobil), yuk shakli, zichlik, anomaliya; "
+    "vagon turini SHU shaklga ASOSLAB tanla>\n"
+    "VAGON_TURI: <taksonomiyadan eng mos tur — tank deb faqat aniq silindr/oval idish ko'rinsa>\n"
     "ASOSIY_YUK: <rasmda ko'rgan yuk>\n"
     "QORADORI: YO'Q\nQUROL: YO'Q\nTAMAKI: YO'Q\nBOSHQA: YO'Q\nXAVF: PAST"
 )
 USER = (
-    SHOT + "\n\nEndi BERILGAN rasmni DIQQAT bilan ko'rib chiq. Avval TAVSIF da ko'rganingni "
-    "aniq bayon qil, keyin shu kuzatuvga TAYANIB qolgan maydonlarni to'ldir. Dalil bo'lmasa "
-    "YO'Q yoz, qiymatlarni namunadan ko'chirma:\n"
+    SHOT + "\n\nEndi BERILGAN rasmni DIQQAT bilan ko'rib chiq. Avval TAVSIF da vagon SHAKLINI "
+    "(ochiqmi, berk qutimi, silindr-tankmi, platforma+konteynermi, hoppermi, avtomobilmi) "
+    "aniq bayon qil va NEGA shu tur ekanini asosla; KEYIN shu kuzatuvga TAYANIB VAGON_TURI ni "
+    "taksonomiyadan tanla. Aniq silindr/oval idish ko'rinmasa TANK DEMA. Kontrabandada dalil "
+    "bo'lmasa YO'Q yoz, qiymatlarni namunadan ko'chirma:\n"
     "TAVSIF:\nVAGON_TURI:\nASOSIY_YUK:\nQORADORI:\nQUROL:\nTAMAKI:\nBOSHQA:\nXAVF:"
 )
 

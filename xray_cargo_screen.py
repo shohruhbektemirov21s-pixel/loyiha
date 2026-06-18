@@ -43,12 +43,32 @@ OLLAMA = os.environ.get("XRAY_VLM_BASE_URL", "http://127.0.0.1:11434")
 MODEL  = os.environ.get("XRAY_VLM_MODEL", "qwen3-vl:4b")
 PREFILL = "<think>\n\n</think>\n\n"   # skip qwen3-vl chain-of-thought (see vlm/backend.py)
 
+# NOTE: prompt taxonomy + tank anti-bias kept in sync with vlm/screen.py so the
+# prototype and the production screener label wagons the same way (no tank
+# over-prediction). The contraband logic is unchanged.
 SYS = (
  "Siz bojxona temir-yo'l rentgen (X-ray) skanlarini tahlil qiluvchi mutaxassisiz. "
- "Tasvirlar yon ko'rinishdagi vagonlar. Vazifa: vagon turi va asosiy yukni aniqlash, "
- "hamda kontrabanda belgilarini baholash.\n"
- "QAT'IY QOIDALAR:\n"
- "- Oddiy yuk (avtomobil, sanoat suyuqligi/tanki, qop-jako, g'altak, metall buyum) "
+ "Tasvirlar yon ko'rinishdagi vagonlar. Vazifa: vagon turini ANIQ ajratish, asosiy "
+ "yukni aniqlash, hamda kontrabanda belgilarini baholash.\n"
+ "\n"
+ "VAGON TURLARI TAKSONOMIYASI (faqat shu ro'yxatdan birini tanla, eng mosini):\n"
+ "- Ochiq bortli vagon (gondola): yuqorisi OCHIQ, atrofida bortlar; yuk tepadan ko'rinadi.\n"
+ "- Yopiq (kryti) vagon: to'liq BERK to'rtburchak QUTI shaklida, yon devor va tomi bor, "
+ "o'rtasida suriladigan eshik.\n"
+ "- Sisterna / tank vagon: FAQAT aniq SILINDR yoki OVAL tank IDISHI ko'ringanda — "
+ "yumaloq uchli, gorizontal yotgan idish.\n"
+ "- Platforma + konteyner(lar): tekis platforma ustida TO'RTBURCHAK konteyner(lar).\n"
+ "- Hopper vagon: pastga TORAYIB, ostidan to'kiluvchi voronka (sochiluvchi yuk).\n"
+ "- Avtomobil tashuvchi: ichida AVTOMOBIL(lar) shakli aniq ko'rinadi.\n"
+ "Agar hech biriga aniq mos kelmasa: \"aniqlanmadi\" deb yoz, taxmin qilma.\n"
+ "\n"
+ "TANK ANTI-BIAS (JUDA MUHIM): Sisterna/tank deb FAQAT aniq SILINDRIK yoki OVAL tank "
+ "idishi ko'ringandagina yoz. To'rtburchak konteyner, berk quti vagon, yashik, ochiq "
+ "yuk, qop, g'altak, avtomobil, yoki shakli noaniq bo'lsa — bu TANK EMAS, boshqa turni "
+ "tanla. Shaklga shoshilib 'tank' DEMA.\n"
+ "\n"
+ "KONTRABANDA QAT'IY QOIDALARI:\n"
+ "- Oddiy yuk (avtomobil, qop-jako, g'altak, metall buyum, suyuqlik idishi) "
  "KONTRABANDA EMAS — bunday holda barcha kontrabanda bandlari YO'Q.\n"
  "- Faqat ko'zga aniq tashlanadigan, tasvirlab bera oladigan dalil bo'lsagina BOR yoki SHUBHALI de.\n"
  "- Yagona energiyali X-ray faqat SHAKLNI ko'rsatadi, material turini emas. Narkotikni "
@@ -58,13 +78,14 @@ SYS = (
 )
 SHOT = (
  "Quyida FAQAT format namunasi (qiymatlarni ko'chirma, har bir maydonni o'zing rasmga qarab to'ldir):\n"
- "VAGON_TURI: <rasmda ko'rgan vagon turi>\n"
+ "VAGON_TURI: <taksonomiyadan eng mos tur — tank deb faqat aniq silindr/oval idish ko'rinsa>\n"
  "ASOSIY_YUK: <rasmda ko'rgan yuk>\n"
  "QORADORI: YO'Q\nQUROL: YO'Q\nTAMAKI: YO'Q\nBOSHQA: YO'Q\nXAVF: PAST"
 )
 USER = (
- SHOT + "\n\nEndi BERILGAN rasmni xuddi shu formatда tahlil qil. Dalil bo'lmasa YO'Q yoz, "
- "qiymatlarni namunadan ko'chirma:\n"
+ SHOT + "\n\nEndi BERILGAN rasmni xuddi shu formatда tahlil qil. Avval vagon SHAKLINI "
+ "aniqlab, VAGON_TURI ni taksonomiyadan tanla; aniq silindr/oval idish ko'rinmasa TANK "
+ "DEMA. Dalil bo'lmasa YO'Q yoz, qiymatlarni namunadan ko'chirma:\n"
  "VAGON_TURI:\nASOSIY_YUK:\nQORADORI:\nQUROL:\nTAMAKI:\nBOSHQA:\nXAVF:"
 )
 
