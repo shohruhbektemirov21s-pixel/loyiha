@@ -1,0 +1,44 @@
+# Acquisition bridge — Python + pydicom + opencv-headless
+# Needs access to /dev/video* (HDMI grabber) and/or a hot-folder mount.
+
+FROM python:3.12-slim AS builder
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      gcc libpq-dev libffi-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt .
+# opencv-python-headless requires libGL; install only what's needed
+RUN pip install --no-cache-dir --prefix=/install \
+      pydicom==3.0.1 \
+      opencv-python-headless==4.11.0.86 \
+      Pillow==11.2.1 \
+      httpx==0.28.1
+
+FROM python:3.12-slim AS runtime
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      libglib2.0-0 libgl1 \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd -r -s /bin/false -d /app xray_acq \
+    && install -d -o xray_acq /var/lib/xray/incoming
+
+COPY --from=builder /install /usr/local
+
+WORKDIR /app
+COPY acquisition/ ./acquisition/
+COPY contracts/ ./contracts/
+COPY datalayer/ ./datalayer/
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app
+
+# video group membership needed for /dev/video* access
+# At runtime: docker run --group-add video ...
+USER xray_acq
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+  CMD pgrep -f "acquisition.pipeline" > /dev/null
+
+CMD ["python", "-m", "acquisition.pipeline"]

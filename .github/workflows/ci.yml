@@ -1,0 +1,201 @@
+name: CI — X-ray Assistant Test Suite
+
+on:
+  push:
+    branches: [main, dev, "release/**"]
+  pull_request:
+    branches: [main, dev]
+
+env:
+  PYTHONPATH: .
+  XRAY_ENVIRONMENT:     test
+  XRAY_DETECTOR_ENABLED: "false"
+  XRAY_VLM_ENABLED:      "false"
+  XRAY_JWT_SECRET:       ${{ secrets.XRAY_CI_JWT_SECRET }}
+  XRAY_AUDIT_HMAC_KEY:   ${{ secrets.XRAY_CI_HMAC_KEY }}
+
+jobs:
+  # ──────────────────────────────────────────────────────────────────────────
+  # Job 1: Fast unit + security + contract tests (no GPU, no DB)
+  # Target: < 2 minutes
+  # ──────────────────────────────────────────────────────────────────────────
+  unit-tests:
+    name: Unit + Security + Contracts
+    runs-on: ubuntu-22.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt pytest pytest-asyncio pytest-cov httpx
+
+      - name: Generate test secrets
+        run: |
+          echo "XRAY_JWT_SECRET=$(python -c 'import secrets; print(secrets.token_hex(32))')" >> $GITHUB_ENV
+          echo "XRAY_AUDIT_HMAC_KEY=$(python -c 'import secrets; print(secrets.token_hex(32))')" >> $GITHUB_ENV
+
+      - name: Run unit tests
+        run: |
+          pytest tests/unit/ tests/security/ \
+            -m "not requires_real_detector and not requires_real_vlm and not requires_db and not e2e" \
+            --cov=app --cov=contracts --cov-report=xml --cov-report=term-missing \
+            -v --tb=short
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v4
+        with:
+          file: coverage.xml
+          flags: unit
+          fail_ci_if_error: false
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Job 2: Integration tests (FastAPI stub mode, no GPU)
+  # Target: < 5 minutes
+  # ──────────────────────────────────────────────────────────────────────────
+  integration-tests:
+    name: Integration Tests (stub mode)
+    runs-on: ubuntu-22.04
+    needs: unit-tests
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt pytest pytest-asyncio httpx
+
+      - name: Generate test secrets
+        run: |
+          echo "XRAY_JWT_SECRET=$(python -c 'import secrets; print(secrets.token_hex(32))')" >> $GITHUB_ENV
+          echo "XRAY_AUDIT_HMAC_KEY=$(python -c 'import secrets; print(secrets.token_hex(32))')" >> $GITHUB_ENV
+
+      - name: Run integration tests
+        run: |
+          pytest tests/integration/ \
+            -m "not requires_db and not e2e" \
+            -v --tb=short
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Job 3: Model metric gate tests (mock dataset, no GPU)
+  # The gate logic is tested, not real model recall.
+  # Target: < 3 minutes
+  # ──────────────────────────────────────────────────────────────────────────
+  model-gate-logic:
+    name: Model Gate Logic (mock dataset)
+    runs-on: ubuntu-22.04
+    needs: unit-tests
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt pytest pytest-asyncio
+
+      - name: Run metric gate tests (mock mode)
+        run: |
+          pytest tests/model/ \
+            -m "not requires_real_detector and not requires_real_vlm" \
+            -v --tb=short
+        env:
+          # No XRAY_TEST_DATASET_PATH → uses MockLabeledDataset
+          # No XRAY_DETECTOR_ENABLED → uses DetectorUnderTest mock
+          XRAY_GATE_RECALL: "0.95"
+          XRAY_GATE_PRECISION: "0.80"
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Job 4: Performance overhead tests (stub mode — framework overhead only)
+  # ──────────────────────────────────────────────────────────────────────────
+  perf-overhead:
+    name: API Framework Overhead
+    runs-on: ubuntu-22.04
+    needs: integration-tests
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt pytest pytest-asyncio httpx
+
+      - name: Generate test secrets
+        run: |
+          echo "XRAY_JWT_SECRET=$(python -c 'import secrets; print(secrets.token_hex(32))')" >> $GITHUB_ENV
+          echo "XRAY_AUDIT_HMAC_KEY=$(python -c 'import secrets; print(secrets.token_hex(32))')" >> $GITHUB_ENV
+
+      - name: Run API overhead tests
+        run: |
+          pytest tests/performance/test_latency.py::TestAPIFrameworkOverhead \
+            tests/performance/test_latency.py::TestConcurrency \
+            -v --tb=short
+        env:
+          XRAY_PERF_TESTS: "true"
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Job 5 (nightly): Real model recall gates — requires self-hosted GPU runner
+  # and labeled dataset. Only runs on main branch, not PRs.
+  # ──────────────────────────────────────────────────────────────────────────
+  model-recall-gates:
+    name: Detector Recall Gates (real model, held-out set)
+    runs-on: [self-hosted, gpu, xray-ops]
+    needs: unit-tests
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies (with GPU extras)
+        run: pip install -r requirements.txt pytest pytest-asyncio onnxruntime-gpu
+
+      - name: Run detector recall gate
+        env:
+          XRAY_DETECTOR_ENABLED:   "true"
+          XRAY_DETECTOR_WEIGHTS:   ${{ secrets.XRAY_DETECTOR_WEIGHTS_PATH }}
+          XRAY_DETECTOR_DEVICE:    "cuda"
+          XRAY_TEST_DATASET_PATH:  ${{ secrets.XRAY_HELD_OUT_DATASET_PATH }}
+          XRAY_GATE_RECALL:        "0.95"
+          XRAY_GATE_PRECISION:     "0.80"
+          XRAY_GATE_RECALL_HIGH_RISK: "0.97"
+          XRAY_BASELINE_RECALL_JSON: ${{ secrets.XRAY_BASELINE_RECALL_JSON }}
+        run: |
+          pytest tests/model/test_detector_metrics.py \
+            tests/model/test_fn_cases.py \
+            -v --tb=long -s
+
+      - name: Notify on recall regression
+        if: failure()
+        uses: slackapi/slack-github-action@v1
+        with:
+          payload: |
+            {
+              "text": "🚨 *RECALL REGRESSION* on `${{ github.sha }}` — detector recall gate FAILED. Release blocked."
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_OPS_WEBHOOK }}

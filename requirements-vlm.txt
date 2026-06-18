@@ -1,0 +1,25 @@
+# Extra dependencies for the VLM serving box.
+# Install AFTER requirements.txt:
+#   pip install -r requirements.txt -r requirements-vlm.txt
+#
+# GPU requirements:
+#   CUDA 12.x + cuDNN 8.x must be installed at the OS level.
+#   Confirm with: nvidia-smi && nvcc --version
+#
+# For CPU-only testing (slow, ~10 tokens/s on 4B):
+#   Change XRAY_VLM_TORCH_DTYPE=float32 and XRAY_VLM_DEVICE_MAP=cpu
+
+# ── PyTorch (CUDA 12.1 wheel — change cu121 to match your CUDA version) ──────
+torch==2.4.1+cu121 --extra-index-url https://download.pytorch.org/whl/cu121
+torchvision==0.19.1+cu121 --extra-index-url https://download.pytorch.org/whl/cu121
+
+# ── HuggingFace stack ─────────────────────────────────────────────────────────
+transformers==4.52.4
+accelerate==1.7.0
+tokenizers==0.21.1
+
+# ── Qwen-VL image processing utilities ───────────────────────────────────────
+qwen-vl-utils==0.0.10
+
+# ── Fast generation (optional but strongly recommended on GPU) ────────────────
+# flash-attn==2.7.4.post1   # requires CUDA toolkit; uncomment if available

@@ -1,0 +1,75 @@
+---
+# SLA / throughput recording rules.
+# These are pre-computed for dashboard efficiency and capacity planning.
+
+groups:
+
+  - name: sla_recording
+    interval: 60s
+    rules:
+
+      # ── Scan throughput ───────────────────────────────────────────────────────
+      - record: xray:scans_per_hour
+        expr:   increase(xray_detections_total[1h])
+
+      - record: xray:scans_per_day
+        expr:   increase(xray_detections_total[24h])
+
+      # ── End-to-end latency (acquisition → verdict) ───────────────────────────
+      # xray_scan_e2e_duration_seconds_bucket — histogram instrumented in API
+      - record: xray:e2e_latency_p50
+        expr:   histogram_quantile(0.50, rate(xray_scan_e2e_duration_seconds_bucket[15m]))
+
+      - record: xray:e2e_latency_p95
+        expr:   histogram_quantile(0.95, rate(xray_scan_e2e_duration_seconds_bucket[15m]))
+
+      - record: xray:e2e_latency_p99
+        expr:   histogram_quantile(0.99, rate(xray_scan_e2e_duration_seconds_bucket[15m]))
+
+      # ── Decision outcome distribution ────────────────────────────────────────
+      - record: xray:outcome_cleared_rate_1h
+        expr: >
+          rate(xray_feedback_total{outcome="cleared"}[1h])
+          / clamp_min(rate(xray_feedback_total[1h]), 0.001)
+
+      - record: xray:outcome_inspected_rate_1h
+        expr: >
+          rate(xray_feedback_total{outcome="inspected"}[1h])
+          / clamp_min(rate(xray_feedback_total[1h]), 0.001)
+
+      # ── API availability ─────────────────────────────────────────────────────
+      - record: xray:api_availability_1d
+        expr: avg_over_time(up{job="xray_api"}[24h])
+
+      # ── SLA alert: availability < 99% over 24h ───────────────────────────────
+      - alert: SLAAvailabilityBreach
+        expr:  xray:api_availability_1d < 0.99
+        for:   5m
+        labels:
+          severity: warning
+          team:     ops
+        annotations:
+          summary:     "API availability < 99% over the last 24h"
+          description: >
+            Availability: {{ $value | humanizePercentage }}.
+            SLA target is 99% uptime during operational hours (06:00–22:00).
+
+      # ── Alert: no operator decisions in 2h during operational hours ──────────
+      - alert: OperatorDecisionSilence
+        expr: |
+          (
+            increase(xray_feedback_total[2h]) == 0
+          ) and (
+            increase(xray_detections_total[2h]) > 5
+          ) and (
+            (hour() >= 7) and (hour() < 21)
+          )
+        for: 15m
+        labels:
+          severity: warning
+          team:     ops
+        annotations:
+          summary: "No operator decisions in 2h despite active scans"
+          description: >
+            Scans are being processed but no feedback is being submitted.
+            Check operator console availability and operator workstation.

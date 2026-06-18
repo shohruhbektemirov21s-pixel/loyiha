@@ -1,0 +1,106 @@
+# Alertmanager configuration — internal delivery only.
+# No PagerDuty, no Slack, no external webhooks. Delivery options:
+#   1. Internal SMTP relay (recommended)
+#   2. Syslog / SIEM webhook on the LAN
+
+global:
+  smtp_smarthost:      ${ALERTMANAGER_SMTP_HOST}
+  smtp_from:           ${ALERTMANAGER_SMTP_FROM}
+  smtp_require_tls:    false    # internal SMTP; enable if relay supports STARTTLS
+  resolve_timeout:     5m
+
+# ---------------------------------------------------------------------------
+# Templates
+# ---------------------------------------------------------------------------
+templates:
+  - /etc/alertmanager/templates/*.tmpl
+
+# ---------------------------------------------------------------------------
+# Routing tree
+# ---------------------------------------------------------------------------
+route:
+  group_by:       [ alertname, severity, team ]
+  group_wait:     30s
+  group_interval: 5m
+  repeat_interval: 4h
+  receiver: ops-email
+
+  routes:
+    # Critical security alerts — immediate, repeated hourly
+    - match:
+        severity: critical
+        team:     security
+      receiver: security-email
+      repeat_interval: 1h
+      group_wait: 0s
+
+    # Critical operational alerts
+    - match:
+        severity: critical
+        team:     ops
+      receiver: ops-email
+      repeat_interval: 2h
+
+    # Critical ML alerts
+    - match:
+        severity: critical
+        team:     mlops
+      receiver: mlops-email
+      repeat_interval: 2h
+
+    # Warnings — batch and deliver every 4h
+    - match:
+        severity: warning
+      receiver: ops-email
+      repeat_interval: 4h
+
+# ---------------------------------------------------------------------------
+# Inhibition rules
+# ---------------------------------------------------------------------------
+inhibit_rules:
+  # If API is down, suppress VLM/detector alerts (those are downstream effects)
+  - source_match:
+      alertname: APIDown
+      severity:  critical
+    target_match_re:
+      alertname: "VLMDown|DetectorDown|AcquisitionSilence"
+    equal: []
+
+  # If PostgreSQL is down, suppress API alerts
+  - source_match:
+      alertname: PostgresDown
+      severity:  critical
+    target_match:
+      alertname: APIDown
+    equal: []
+
+# ---------------------------------------------------------------------------
+# Receivers
+# ---------------------------------------------------------------------------
+receivers:
+
+  - name: ops-email
+    email_configs:
+      - to:            ${ALERTMANAGER_ALERT_TO}
+        send_resolved: true
+        headers:
+          Subject: '[XRAY-{{ .Status | toUpper }}] {{ .GroupLabels.alertname }}'
+        html: '{{ template "email.xray.html" . }}'
+
+  - name: security-email
+    email_configs:
+      - to:            ${ALERTMANAGER_ALERT_TO}
+        send_resolved: true
+        headers:
+          Subject: '[XRAY-SECURITY-{{ .Status | toUpper }}] {{ .GroupLabels.alertname }}'
+          Priority: urgent
+          X-Priority: "1"
+        html: '{{ template "email.xray.html" . }}'
+
+  - name: mlops-email
+    email_configs:
+      - to:            ${ALERTMANAGER_ALERT_TO}
+        send_resolved: true
+        headers:
+          Subject: '[XRAY-MLOPS-{{ .Status | toUpper }}] {{ .GroupLabels.alertname }}'
+        html: '{{ template "email.xray.html" . }}'

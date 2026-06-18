@@ -1,0 +1,47 @@
+# VLM service — llama.cpp server compiled with CUDA support
+# llama.cpp server binary must be pre-compiled and bundled as a wheel or binary.
+# Build llama.cpp offline on a machine with CUDA toolchain:
+#   cmake -B build -DGGML_CUDA=ON && cmake --build build --target llama-server -j$(nproc)
+# Then copy the binary into deploy/bin/llama-server
+
+FROM registry.internal/cuda:12.4.1-cudnn-runtime-ubuntu22.04 AS runtime
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      libgomp1 wget \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd -r -s /bin/false -d /app xray_vlm
+
+# Pre-compiled llama-server binary (CUDA-enabled, built offline)
+COPY deploy/bin/llama-server /usr/local/bin/llama-server
+RUN chmod +x /usr/local/bin/llama-server
+
+# Model weights are mounted as a volume at /models — not baked into image.
+# The GGUF file path is provided via VLM_MODEL_PATH env var.
+
+WORKDIR /app
+ENV LLAMA_NO_METAL=1 \
+    GGML_CUDA_NO_PINNED=1
+
+USER xray_vlm
+EXPOSE 8080
+
+HEALTHCHECK --interval=30s --timeout=15s --start-period=180s --retries=3 \
+  CMD wget -qO- http://localhost:8080/health | grep -q ok
+
+# --no-webui: headless only; --metrics: expose Prometheus /metrics endpoint
+#
+# NOTE: env vars MUST be expanded by a shell. The exec form (JSON array) does
+# NOT perform variable substitution, so an earlier `["--model","/models/$(VLM_MODEL_PATH)"]`
+# passed the literal string "/models/$(VLM_MODEL_PATH)" to llama-server and the
+# service crash-looped. We run through `sh -c` so ${VAR} expands at runtime,
+# and `exec` so llama-server becomes PID 1 (clean signal handling).
+# VLM_MODEL_PATH is required (`:?`) — fail loudly rather than load a wrong model.
+ENTRYPOINT ["/bin/sh", "-c"]
+CMD ["exec llama-server \
+  --model        \"/models/${VLM_MODEL_PATH:?VLM_MODEL_PATH must be set}\" \
+  --host         0.0.0.0 \
+  --port         8080 \
+  --ctx-size     \"${VLM_CTX_SIZE:-4096}\" \
+  --n-gpu-layers \"${VLM_N_GPU_LAYERS:-35}\" \
+  --threads      \"${VLM_THREADS:-4}\" \
+  --metrics --no-webui --log-disable"]

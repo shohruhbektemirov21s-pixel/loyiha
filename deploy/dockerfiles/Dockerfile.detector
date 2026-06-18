@@ -1,0 +1,38 @@
+# Detector service — ONNX Runtime with CUDA support
+# Base image must be pre-pulled into the local registry before air-gap:
+#   docker pull nvcr.io/nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04
+#   docker tag  nvcr.io/nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04 registry.internal/cuda:12.4.1
+
+FROM registry.internal/cuda:12.4.1-cudnn-runtime-ubuntu22.04 AS runtime
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      python3.12 python3.12-venv python3-pip wget \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd -r -s /bin/false -d /app xray_det
+
+# onnxruntime-gpu wheel must be bundled in /wheels/ (no PyPI access)
+COPY deploy/wheels/onnxruntime_gpu-*.whl /wheels/
+RUN pip3 install --no-index --find-links=/wheels /wheels/onnxruntime_gpu-*.whl \
+    && pip3 install --no-cache-dir numpy Pillow fastapi uvicorn \
+    && rm -rf /wheels
+
+WORKDIR /app
+COPY detector/ ./detector/
+COPY contracts/ ./contracts/
+COPY datalayer/ ./datalayer/
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app \
+    CUDA_VISIBLE_DEVICES=0 \
+    ORT_DISABLE_TELEMETRY=1
+
+USER xray_det
+EXPOSE 8001
+
+HEALTHCHECK --interval=20s --timeout=10s --start-period=120s --retries=3 \
+  CMD wget -qO- http://localhost:8001/health | grep -q ok
+
+CMD ["python3", "-m", "uvicorn", "detector.server:app", \
+     "--host", "0.0.0.0", "--port", "8001", "--workers", "1", \
+     "--log-level", "warning"]

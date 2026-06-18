@@ -1,0 +1,99 @@
+---
+# Security-specific alerts — audit chain, auth failures, anomalous access.
+
+groups:
+
+  - name: security
+    interval: 15s
+    rules:
+
+      # ── Audit chain integrity ────────────────────────────────────────────────
+      # xray_audit_chain_valid 0|1 — pushed by a periodic cron job that calls
+      # GET /v1/admin/audit/verify and pushes the result via pushgateway.
+      - alert: AuditChainTampered
+        expr: xray_audit_chain_valid == 0
+        for: 1m
+        labels:
+          severity: critical
+          team:     security
+        annotations:
+          summary:     "SECURITY: Audit chain integrity check FAILED"
+          description: >
+            The HMAC-SHA256 audit chain has failed verification. This may indicate
+            database tampering, storage corruption, or an insider threat.
+            Isolate the system immediately and escalate to security team.
+          runbook: "ops/runbooks/incident-response.md"
+
+      # ── Authentication failures ──────────────────────────────────────────────
+      # xray_auth_failure_total{reason} — counter in FastAPI /metrics
+      - alert: AuthFailureBurst
+        expr: rate(xray_auth_failure_total[5m]) > 0.5
+        for: 2m
+        labels:
+          severity: warning
+          team:     security
+        annotations:
+          summary: "High authentication failure rate > 0.5/s — possible brute force"
+          description: "Review nginx access logs and consider temporarily locking the source IP."
+
+      - alert: AuthFailureCritical
+        expr: increase(xray_auth_failure_total[1m]) > 20
+        for: 1m
+        labels:
+          severity: critical
+          team:     security
+        annotations:
+          summary: "20+ auth failures in 1 minute — active brute force attack"
+
+      # ── Unexpected API access patterns ──────────────────────────────────────
+      # Alert if non-operator endpoints are being probed (docs, admin from wrong IP)
+      - alert: UnauthorisedEndpointAccess
+        expr: rate(xray_http_requests_total{status="403"}[5m]) > 0.2
+        for: 3m
+        labels:
+          severity: warning
+          team:     security
+        annotations:
+          summary: "Elevated 403 rate — unauthorised access attempts"
+
+      # ── Container process anomaly ────────────────────────────────────────────
+      # Alert if a container restarts unexpectedly (may indicate OOM or exploit)
+      - alert: ContainerRestartLoop
+        expr: increase(container_last_seen[10m]) < 1 and rate(container_start_time_seconds[10m]) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          team:     ops
+        annotations:
+          summary: "Container {{ $labels.name }} is restarting repeatedly"
+
+      # ── Network egress anomaly ───────────────────────────────────────────────
+      # All networks are internal=true; any non-zero outbound bytes on external
+      # interface is anomalous. Requires node_network_transmit_bytes_total.
+      - alert: UnexpectedNetworkEgress
+        expr: |
+          increase(node_network_transmit_bytes_total{device=~"eth0|ens.*"}[5m]) > 1e6
+        for: 2m
+        labels:
+          severity: critical
+          team:     security
+        annotations:
+          summary:     "SECURITY: Unexpected network egress detected on {{ $labels.device }}"
+          description: >
+            {{ $value | humanize1024 }} transmitted in 5m on external interface.
+            All Docker networks are internal. This traffic is anomalous and may
+            indicate data exfiltration or a misconfiguration.
+          runbook: "ops/runbooks/incident-response.md"
+
+      # ── TLS certificate expiry ───────────────────────────────────────────────
+      # Requires blackbox_exporter probing HTTPS endpoint
+      - alert: TLSCertExpirySoon
+        expr: |
+          probe_ssl_earliest_cert_expiry - time() < 86400 * 30
+        for: 1h
+        labels:
+          severity: warning
+          team:     ops
+        annotations:
+          summary: "TLS certificate expires in < 30 days"
+          description: "Renew the self-signed or CA-signed certificate before expiry."

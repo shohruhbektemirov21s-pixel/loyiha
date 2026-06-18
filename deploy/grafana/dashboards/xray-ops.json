@@ -1,0 +1,136 @@
+{
+  "title": "X-ray Operations",
+  "uid":   "xray-ops-v1",
+  "tags":  ["xray", "ops", "mlops"],
+  "timezone": "browser",
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "panels": [
+
+    {
+      "type": "stat", "id": 1, "gridPos": {"x":0,"y":0,"w":4,"h":4},
+      "title": "Scans today",
+      "targets": [{"expr":"xray:scans_per_day","legendFormat":"scans/day","datasource":"Prometheus"}],
+      "options": {"reduceOptions":{"calcs":["lastNotNull"]},"colorMode":"value","graphMode":"none"},
+      "fieldConfig": {"defaults":{"thresholds":{"mode":"absolute","steps":[{"color":"green","value":null}]}}}
+    },
+
+    {
+      "type": "stat", "id": 2, "gridPos": {"x":4,"y":0,"w":4,"h":4},
+      "title": "FP rate (1h)",
+      "targets": [{"expr":"xray:fp_rate_1h * 100","legendFormat":"FP %","datasource":"Prometheus"}],
+      "options": {"reduceOptions":{"calcs":["lastNotNull"]},"colorMode":"background","unit":"percent"},
+      "fieldConfig": {"defaults":{"thresholds":{"mode":"absolute","steps":[
+        {"color":"green","value":null},{"color":"yellow","value":15},{"color":"red","value":30}
+      ]},"unit":"percent"}}
+    },
+
+    {
+      "type": "stat", "id": 3, "gridPos": {"x":8,"y":0,"w":4,"h":4},
+      "title": "FN rate (24h)",
+      "targets": [{"expr":"xray:fn_rate_24h * 100","legendFormat":"FN %","datasource":"Prometheus"}],
+      "options": {"reduceOptions":{"calcs":["lastNotNull"]},"colorMode":"background"},
+      "fieldConfig": {"defaults":{"thresholds":{"mode":"absolute","steps":[
+        {"color":"green","value":null},{"color":"red","value":3}
+      ]},"unit":"percent"}}
+    },
+
+    {
+      "type": "stat", "id": 4, "gridPos": {"x":12,"y":0,"w":4,"h":4},
+      "title": "API availability (24h)",
+      "targets": [{"expr":"xray:api_availability_1d * 100","datasource":"Prometheus"}],
+      "fieldConfig": {"defaults":{"unit":"percent","thresholds":{"mode":"absolute","steps":[
+        {"color":"red","value":null},{"color":"yellow","value":95},{"color":"green","value":99}
+      ]}}}
+    },
+
+    {
+      "type": "stat", "id": 5, "gridPos": {"x":16,"y":0,"w":4,"h":4},
+      "title": "VLM p99 latency",
+      "targets": [{"expr":"xray:vlm_latency_p99","datasource":"Prometheus"}],
+      "fieldConfig": {"defaults":{"unit":"s","thresholds":{"mode":"absolute","steps":[
+        {"color":"green","value":null},{"color":"yellow","value":10},{"color":"red","value":30}
+      ]}}}
+    },
+
+    {
+      "type": "stat", "id": 6, "gridPos": {"x":20,"y":0,"w":4,"h":4},
+      "title": "Disk (store)",
+      "targets": [{"expr":"100 - (node_filesystem_avail_bytes{mountpoint='/var/lib/xray/store'} / node_filesystem_size_bytes{mountpoint='/var/lib/xray/store'} * 100)","datasource":"Prometheus"}],
+      "fieldConfig": {"defaults":{"unit":"percent","thresholds":{"mode":"absolute","steps":[
+        {"color":"green","value":null},{"color":"yellow","value":70},{"color":"red","value":90}
+      ]}}}
+    },
+
+    {
+      "type": "timeseries", "id": 10, "gridPos": {"x":0,"y":4,"w":12,"h":8},
+      "title": "Scan throughput",
+      "targets": [
+        {"expr":"rate(xray_detections_total[5m]) * 60","legendFormat":"scans/min","datasource":"Prometheus"}
+      ],
+      "fieldConfig": {"defaults":{"unit":"short","custom":{"fillOpacity":10}}}
+    },
+
+    {
+      "type": "timeseries", "id": 11, "gridPos": {"x":12,"y":4,"w":12,"h":8},
+      "title": "Model confidence distribution (p25 / p50 / p75)",
+      "targets": [
+        {"expr":"histogram_quantile(0.25, rate(xray_detection_score_bucket[15m]))","legendFormat":"p25","datasource":"Prometheus"},
+        {"expr":"histogram_quantile(0.50, rate(xray_detection_score_bucket[15m]))","legendFormat":"p50","datasource":"Prometheus"},
+        {"expr":"histogram_quantile(0.75, rate(xray_detection_score_bucket[15m]))","legendFormat":"p75","datasource":"Prometheus"}
+      ],
+      "fieldConfig": {"defaults":{"unit":"percentunit","min":0,"max":1}}
+    },
+
+    {
+      "type": "timeseries", "id": 12, "gridPos": {"x":0,"y":12,"w":12,"h":8},
+      "title": "False positive / false negative rates",
+      "targets": [
+        {"expr":"xray:fp_rate_1h","legendFormat":"FP rate (1h)","datasource":"Prometheus"},
+        {"expr":"xray:fn_rate_24h","legendFormat":"FN rate (24h)","datasource":"Prometheus"}
+      ],
+      "fieldConfig": {"defaults":{"unit":"percentunit","custom":{"fillOpacity":5}},
+        "overrides":[{"matcher":{"id":"byName","options":"FN rate (24h)"},"properties":[{"id":"color","value":{"fixedColor":"red","mode":"fixed"}}]}]
+      }
+    },
+
+    {
+      "type": "timeseries", "id": 13, "gridPos": {"x":12,"y":12,"w":12,"h":8},
+      "title": "Inference latency (p50 / p99)",
+      "targets": [
+        {"expr":"xray:detector_latency_p99","legendFormat":"Detector p99","datasource":"Prometheus"},
+        {"expr":"xray:vlm_latency_p99","legendFormat":"VLM p99","datasource":"Prometheus"},
+        {"expr":"xray:e2e_latency_p95","legendFormat":"E2E p95","datasource":"Prometheus"}
+      ],
+      "fieldConfig": {"defaults":{"unit":"s"}}
+    },
+
+    {
+      "type": "timeseries", "id": 14, "gridPos": {"x":0,"y":20,"w":12,"h":8},
+      "title": "Operator decisions by outcome",
+      "targets": [
+        {"expr":"rate(xray_feedback_total{outcome='cleared'}[15m])","legendFormat":"Cleared","datasource":"Prometheus"},
+        {"expr":"rate(xray_feedback_total{outcome='inspected'}[15m])","legendFormat":"Inspected","datasource":"Prometheus"},
+        {"expr":"rate(xray_feedback_total{outcome='seized'}[15m])","legendFormat":"Seized","datasource":"Prometheus"},
+        {"expr":"rate(xray_feedback_total{outcome='escalated'}[15m])","legendFormat":"Escalated","datasource":"Prometheus"}
+      ],
+      "fieldConfig": {"defaults":{"unit":"short","custom":{"fillOpacity":10}}}
+    },
+
+    {
+      "type": "alertlist", "id": 15, "gridPos": {"x":12,"y":20,"w":12,"h":8},
+      "title": "Active alerts",
+      "options": {"alertInstanceLabelFilter":"","dashboardAlerts":false,"groupBy":["alertname"],"groupMode":"default","maxItems":20,"sortOrder":1,"stateFilter":{"error":true,"firing":true,"noData":false,"normal":false,"pending":false}}
+    },
+
+    {
+      "type": "table", "id": 16, "gridPos": {"x":0,"y":28,"w":24,"h":6},
+      "title": "Service health",
+      "targets": [
+        {"expr":"up{job=~'xray_api|xray_detector|xray_vlm|postgres|nginx'}","legendFormat":"{{job}}","instant":true,"datasource":"Prometheus"}
+      ],
+      "options": {"footer":{"show":false}},
+      "fieldConfig": {"defaults":{"thresholds":{"mode":"absolute","steps":[{"color":"red","value":null},{"color":"green","value":1}]},"custom":{"displayMode":"color-background"}}}
+    }
+  ]
+}

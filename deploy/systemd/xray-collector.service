@@ -1,0 +1,41 @@
+[Unit]
+# Continuous auto-labelling collector: scanner/camera stream -> growing YOLO dataset.
+# Runs the zero-shot teacher (YOLO-World + CLIP) over every incoming frame and
+# writes pseudo-labels into XRAY_COLLECT_OUT. No external API key required.
+Description=X-ray auto-label collector (continuous dataset growth)
+After=network.target
+
+[Service]
+Type=simple
+User=xray
+Group=xray
+WorkingDirectory=/opt/xray
+
+# --- Source: scanner hot-folder (the acquisition/DICOS layer writes here) ---
+# Switch --source camera (+ --motion) to collect from the USB camera instead.
+ExecStart=/usr/bin/python3 -m detector.collect_stream \
+    --source folder \
+    --watch /var/lib/xray/incoming \
+    --out /var/lib/xray/dataset \
+    --min-score 0.30 \
+    --val-frac 0.2 \
+    --flush-every 25
+
+Environment=YOLO_CONFIG_DIR=/var/lib/xray/.ultralytics
+# Air-gap hygiene: model files must be pre-staged; no downloads at runtime.
+Environment=YOLO_OFFLINE=1
+Restart=always
+RestartSec=5
+# Resource guards (CPU box; tune for the target hardware).
+Nice=10
+MemoryMax=6G
+
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/xray
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

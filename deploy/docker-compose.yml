@@ -1,0 +1,376 @@
+# Air-gapped X-ray assistant — full stack
+# Principles:
+#   - No external network access from any container (no_egress driver / deny-all default)
+#   - Each service on the minimum set of internal networks
+#   - All secrets via env file (never baked into images)
+#   - GPU allocated only to inference services; CPU-only for everything else
+#   - Read-only root filesystems where possible; writable tmpfs for runtime state
+#   - Healthchecks on every service; dependency ordering enforces startup sequence
+
+version: "3.9"
+
+# ---------------------------------------------------------------------------
+# Networks — internal only; no external bridge
+# ---------------------------------------------------------------------------
+networks:
+  db-net:
+    driver: bridge
+    internal: true          # no routing to host network / WAN
+    ipam:
+      config: [ { subnet: "172.20.1.0/28" } ]
+
+  api-net:
+    driver: bridge
+    internal: true
+    ipam:
+      config: [ { subnet: "172.20.2.0/28" } ]
+
+  ml-net:
+    driver: bridge
+    internal: true
+    ipam:
+      config: [ { subnet: "172.20.3.0/28" } ]
+
+  acq-net:
+    driver: bridge
+    internal: true
+    ipam:
+      config: [ { subnet: "172.20.4.0/28" } ]
+
+  mon-net:
+    driver: bridge
+    internal: true
+    ipam:
+      config: [ { subnet: "172.20.5.0/28" } ]
+
+  console-net:
+    driver: bridge
+    internal: true
+    ipam:
+      config: [ { subnet: "172.20.6.0/28" } ]
+
+  # LAN-facing: nginx only; bound to the operator LAN NIC, NOT to 0.0.0.0
+  lan-net:
+    driver: bridge
+    ipam:
+      config: [ { subnet: "172.20.7.0/28" } ]
+
+# ---------------------------------------------------------------------------
+# Volumes
+# ---------------------------------------------------------------------------
+volumes:
+  pg-data:          { driver: local }
+  image-store:      { driver: local }   # encrypted image blobs (AES-256-GCM)
+  model-weights:    { driver: local }   # detector + VLM weights
+  model-registry:   { driver: local }   # registry manifests
+  prometheus-data:  { driver: local }
+  grafana-data:     { driver: local }
+  alertmanager-data: { driver: local }
+  log-archive:      { driver: local }   # compressed audit logs
+  backup-staging:   { driver: local }   # pre-encryption backup staging
+
+# ---------------------------------------------------------------------------
+# Services
+# ---------------------------------------------------------------------------
+services:
+
+  # ── PostgreSQL ──────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    networks: [ db-net ]
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/00-init.sql:ro
+      - ./postgres/pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
+    environment:
+      POSTGRES_DB:       ${POSTGRES_DB}
+      POSTGRES_USER:     ${POSTGRES_ADMIN_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_ADMIN_PASSWORD}
+      PGDATA:            /var/lib/postgresql/data/pgdata
+    command: >
+      postgres
+        -c ssl=on
+        -c ssl_cert_file=/var/lib/postgresql/data/server.crt
+        -c ssl_key_file=/var/lib/postgresql/data/server.key
+        -c log_connections=on
+        -c log_disconnections=on
+        -c log_statement=ddl
+        -c log_min_duration_statement=1000
+        -c max_connections=50
+        -c shared_buffers=256MB
+        -c hba_file=/etc/postgresql/pg_hba.conf
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_ADMIN_USER} -d ${POSTGRES_DB}" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:   { cpus: "2", memory: "1G" }
+        reservations: { cpus: "0.5", memory: "256M" }
+
+  # ── API (FastAPI) ───────────────────────────────────────────────────────────
+  api:
+    build:
+      context: ..
+      dockerfile: deploy/dockerfiles/Dockerfile.api
+    image: xray/api:${XRAY_VERSION:-latest}
+    restart: unless-stopped
+    networks: [ db-net, api-net, ml-net, mon-net ]
+    depends_on:
+      postgres: { condition: service_healthy }
+    volumes:
+      - image-store:/var/lib/xray/store:rw
+      - log-archive:/var/log/xray:rw
+    environment:
+      XRAY_ENV:                ${XRAY_ENV:-production}
+      XRAY_DATABASE_URL:       postgresql+asyncpg://${POSTGRES_API_USER}:${POSTGRES_API_PASSWORD}@postgres:5432/${POSTGRES_DB}?ssl=require
+      XRAY_JWT_SECRET:         ${XRAY_JWT_SECRET}
+      XRAY_AUDIT_HMAC_KEY:     ${XRAY_AUDIT_HMAC_KEY}
+      XRAY_STORE_KEY:          ${XRAY_STORE_KEY}
+      XRAY_STORE_DIR:          /var/lib/xray/store
+      XRAY_VLM_ENABLE:         ${XRAY_VLM_ENABLE:-true}
+      XRAY_VLM_BACKEND:        ${XRAY_VLM_BACKEND:-llama_cpp}
+      XRAY_VLM_BASE_URL:       http://vlm:8080
+      XRAY_VLM_MODEL:          ${XRAY_VLM_MODEL}
+      XRAY_DETECTOR_ENABLE:    ${XRAY_DETECTOR_ENABLE:-true}
+      XRAY_DETECTOR_MODEL_PATH: /models/detector.onnx
+      XRAY_METRICS_ENABLE:     "true"
+    read_only: true
+    tmpfs: [ "/tmp:size=128m,mode=1777" ]
+    healthcheck:
+      test: [ "CMD-SHELL", "wget -qO- http://localhost:8000/health | grep -q '\"ok\"'" ]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    deploy:
+      resources:
+        limits:   { cpus: "4", memory: "2G" }
+        reservations: { cpus: "1", memory: "512M" }
+
+  # ── Detector (ONNX Runtime / GPU) ──────────────────────────────────────────
+  detector:
+    build:
+      context: ..
+      dockerfile: deploy/dockerfiles/Dockerfile.detector
+    image: xray/detector:${XRAY_VERSION:-latest}
+    restart: unless-stopped
+    networks: [ ml-net, mon-net ]
+    volumes:
+      - model-weights:/models:ro
+      - image-store:/var/lib/xray/store:ro
+    environment:
+      DETECTOR_MODEL_PATH: /models/detector.onnx
+      DETECTOR_DEVICE:     ${DETECTOR_DEVICE:-cuda}
+      DETECTOR_BATCH_SIZE: ${DETECTOR_BATCH_SIZE:-1}
+      DETECTOR_CONF_THRESH: ${DETECTOR_CONF_THRESH:-0.35}
+    runtime: nvidia          # remove if no GPU; set DETECTOR_DEVICE=cpu
+    deploy:
+      resources:
+        limits:   { cpus: "4", memory: "4G" }
+        reservations:
+          cpus:   "2"
+          memory: "2G"
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [ gpu ]
+    healthcheck:
+      test: [ "CMD-SHELL", "wget -qO- http://localhost:8001/health | grep -q ok" ]
+      interval: 20s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+
+  # ── VLM (llama.cpp server — Qwen3-VL) ──────────────────────────────────────
+  vlm:
+    build:
+      context: ..
+      dockerfile: deploy/dockerfiles/Dockerfile.vlm
+    image: xray/vlm:${XRAY_VERSION:-latest}
+    restart: unless-stopped
+    networks: [ ml-net, mon-net ]
+    volumes:
+      - model-weights:/models:ro
+    environment:
+      VLM_MODEL_PATH:   /models/${XRAY_VLM_MODEL}
+      VLM_CTX_SIZE:     ${VLM_CTX_SIZE:-4096}
+      VLM_N_GPU_LAYERS: ${VLM_N_GPU_LAYERS:-35}
+      VLM_THREADS:      ${VLM_THREADS:-8}
+      VLM_PORT:         8080
+    runtime: nvidia
+    deploy:
+      resources:
+        limits:   { cpus: "8", memory: "16G" }
+        reservations:
+          cpus:   "4"
+          memory: "8G"
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [ gpu ]
+    healthcheck:
+      test: [ "CMD-SHELL", "wget -qO- http://localhost:8080/health | grep -q ok" ]
+      interval: 30s
+      timeout: 15s
+      retries: 3
+      start_period: 180s     # model load time
+
+  # ── Acquisition bridge ──────────────────────────────────────────────────────
+  acquisition:
+    build:
+      context: ..
+      dockerfile: deploy/dockerfiles/Dockerfile.acquisition
+    image: xray/acquisition:${XRAY_VERSION:-latest}
+    restart: unless-stopped
+    networks: [ acq-net, api-net ]
+    volumes:
+      - ${XRAY_ACQ_DICOS_WATCH_DIR:-/var/lib/xray/incoming}:/var/lib/xray/incoming:rw
+    devices:
+      - ${XRAY_GRAB_DEVICE:-/dev/null}:/dev/video0   # HDMI grabber; replace with real device
+    environment:
+      XRAY_ACQ_DRIVER:         ${XRAY_ACQ_DRIVER:-dicos}
+      XRAY_ACQ_SCANNER_ID:     ${XRAY_ACQ_SCANNER_ID:-scanner-01}
+      XRAY_ACQ_LANE_ID:        ${XRAY_ACQ_LANE_ID:-lane-1}
+      XRAY_ACQ_DICOS_WATCH_DIR: /var/lib/xray/incoming
+      XRAY_ACQ_API_BASE_URL:   http://api:8000
+      XRAY_STORE_KEY:          ${XRAY_STORE_KEY}
+      XRAY_STORE_DIR:          /var/lib/xray/store
+    healthcheck:
+      test: [ "CMD-SHELL", "pgrep -f 'acquisition.pipeline' > /dev/null" ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:   { cpus: "2", memory: "1G" }
+
+  # ── Operator console (nginx serving built React app) ────────────────────────
+  console:
+    build:
+      context: ..
+      dockerfile: deploy/dockerfiles/Dockerfile.console
+    image: xray/console:${XRAY_VERSION:-latest}
+    restart: unless-stopped
+    networks: [ console-net ]
+    read_only: true
+    tmpfs: [ "/var/cache/nginx:size=32m", "/var/run:size=4m", "/tmp:size=16m" ]
+    healthcheck:
+      test: [ "CMD-SHELL", "wget -qO- http://localhost:80/ | grep -q 'Rentgen'" ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:   { cpus: "1", memory: "256M" }
+
+  # ── nginx (reverse proxy / TLS termination) ─────────────────────────────────
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    networks: [ console-net, api-net, mon-net, lan-net ]
+    depends_on:
+      api:     { condition: service_healthy }
+      console: { condition: service_healthy }
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/tls:/etc/nginx/tls:ro    # server.crt + server.key — generated locally
+      - ./nginx/snippets:/etc/nginx/snippets:ro
+    ports:
+      # Bind ONLY to the LAN NIC IP — never 0.0.0.0
+      - "${LAN_IP}:443:443"
+      - "${LAN_IP}:80:80"     # redirect to 443 only
+    read_only: true
+    tmpfs: [ "/var/cache/nginx:size=64m,mode=0700", "/var/run:size=4m", "/tmp:size=16m" ]
+    healthcheck:
+      test: [ "CMD-SHELL", "wget -qO- --no-check-certificate https://localhost/health" ]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:   { cpus: "1", memory: "128M" }
+
+  # ── Prometheus ──────────────────────────────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    restart: unless-stopped
+    networks: [ mon-net ]
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/rules:/etc/prometheus/rules:ro
+      - prometheus-data:/prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=90d
+      - --storage.tsdb.retention.size=20GB
+      - --web.enable-lifecycle         # allow config reload
+      - --web.listen-address=:9090
+      - --web.external-url=http://prometheus:9090
+      - --log.level=warn
+    read_only: true
+    tmpfs: [ "/tmp:size=32m" ]
+    healthcheck:
+      test: [ "CMD-SHELL", "wget -qO- http://localhost:9090/-/healthy | grep -q Healthy" ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:   { cpus: "2", memory: "2G" }
+
+  # ── Alertmanager ────────────────────────────────────────────────────────────
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    restart: unless-stopped
+    networks: [ mon-net ]
+    volumes:
+      - ./prometheus/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager-data:/alertmanager
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+      - --storage.path=/alertmanager
+      - --web.listen-address=:9093
+    healthcheck:
+      test: [ "CMD-SHELL", "wget -qO- http://localhost:9093/-/healthy | grep -q OK" ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:   { cpus: "1", memory: "256M" }
+
+  # ── Grafana ─────────────────────────────────────────────────────────────────
+  grafana:
+    image: grafana/grafana:11.3.1
+    restart: unless-stopped
+    networks: [ mon-net ]
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    environment:
+      GF_SECURITY_ADMIN_USER:          ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD:      ${GRAFANA_ADMIN_PASSWORD}
+      GF_SERVER_ROOT_URL:              https://${LAN_IP}/grafana/
+      GF_SERVER_SERVE_FROM_SUB_PATH:   "true"
+      GF_ANALYTICS_REPORTING_ENABLED:  "false"   # no telemetry
+      GF_ANALYTICS_CHECK_FOR_UPDATES:  "false"   # no outbound calls
+      GF_SNAPSHOTS_EXTERNAL_ENABLED:   "false"
+      GF_USERS_ALLOW_SIGN_UP:          "false"
+      GF_AUTH_ANONYMOUS_ENABLED:       "false"
+      GF_SECURITY_DISABLE_GRAVATAR:    "true"
+      GF_LOG_LEVEL:                    warn
+    healthcheck:
+      test: [ "CMD-SHELL", "wget -qO- http://localhost:3000/api/health | grep -q ok" ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:   { cpus: "2", memory: "512M" }

@@ -1,0 +1,22 @@
+# /etc/cron.d/xray — X-ray assistant scheduled tasks
+# All times UTC.
+
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
+MAILTO=""      # no external email from cron — alertmanager handles notifications
+DEPLOY=/opt/xray/deploy
+
+# ── Backup: daily at 02:00 UTC ───────────────────────────────────────────────
+0 2 * * *  root  /bin/bash ${DEPLOY}/scripts/backup.sh >> /var/log/xray/cron.log 2>&1
+
+# ── Health check: every 15 minutes ──────────────────────────────────────────
+*/15 * * * *  root  /bin/bash ${DEPLOY}/scripts/health-check.sh >> /var/log/xray/health.log 2>&1 || true
+
+# ── Audit chain verification: every 6 hours ──────────────────────────────────
+0 */6 * * *  root  /bin/bash ${DEPLOY}/scripts/verify-audit-chain.sh >> /var/log/xray/audit.log 2>&1
+
+# ── Log rotation: daily ──────────────────────────────────────────────────────
+30 3 * * *  root  /usr/sbin/logrotate /etc/logrotate.d/xray
+
+# ── Docker image prune: weekly (keep last 3 versions) ────────────────────────
+0 4 * * 0  root  docker image prune -f --filter "until=168h" >> /var/log/xray/docker.log 2>&1

@@ -1,0 +1,30 @@
+# Console — two-stage: Node.js build → nginx static serve
+# node_modules must be pre-bundled in the source tree for air-gapped builds:
+#   cd console && npm ci --prefer-offline && npm run build
+# OR use an internal npm mirror (Verdaccio) and pass --registry in Stage 1.
+
+# ── Stage 1: build ──────────────────────────────────────────────────────────
+FROM registry.internal/node:22-alpine AS builder
+
+WORKDIR /build
+COPY console/package*.json ./
+# --prefer-offline: use cached tarballs in local npm cache; never hits internet
+RUN npm ci --prefer-offline
+COPY console/ ./
+RUN npm run build        # outputs to /build/dist
+
+# ── Stage 2: serve ──────────────────────────────────────────────────────────
+FROM nginx:1.27-alpine AS runtime
+
+# Remove default config and default content
+RUN rm -rf /etc/nginx/conf.d/* /usr/share/nginx/html/*
+
+COPY --from=builder /build/dist /usr/share/nginx/html
+COPY deploy/nginx/console.conf /etc/nginx/conf.d/console.conf
+
+# nginx user already exists in base image; drop to it
+USER nginx
+EXPOSE 80
+
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
+  CMD wget -qO- http://localhost:80/ | grep -q 'Rentgen'

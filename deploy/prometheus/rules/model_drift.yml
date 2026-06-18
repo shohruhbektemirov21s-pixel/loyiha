@@ -1,0 +1,151 @@
+---
+# Model drift and performance degradation alerts.
+# Metrics sourced from FastAPI /metrics (prometheus_client instrumentation).
+#
+# Metric names expected from app/metrics.py (to be wired into FastAPI):
+#   xray_detections_total{category, lane_id}          — counter
+#   xray_feedback_total{outcome, lane_id}              — counter
+#   xray_detection_judgement_total{judgement, lane_id} — counter (confirmed/rejected/reclassified)
+#   xray_missed_region_total{lane_id}                  — counter (FN reports)
+#   xray_detection_score_bucket{le, category}          — histogram
+#   xray_vlm_inference_duration_seconds_bucket{le}     — histogram
+#   xray_detector_inference_duration_seconds_bucket{le} — histogram
+
+groups:
+
+  - name: model_drift
+    interval: 60s
+    rules:
+
+      # ── False Positive rate (rolling 1h) ────────────────────────────────────
+      # FP = operator rejected the detection
+      - record: xray:fp_rate_1h
+        expr: >
+          rate(xray_detection_judgement_total{judgement="rejected"}[1h])
+          /
+          clamp_min(rate(xray_detections_total[1h]), 0.001)
+
+      - alert: HighFalsePositiveRate
+        expr: xray:fp_rate_1h > 0.20
+        for: 15m
+        labels:
+          severity: warning
+          team:     mlops
+        annotations:
+          summary:     "Detector FP rate > 20% (last 1h)"
+          description: >
+            False positive rate is {{ $value | humanizePercentage }} over the last hour.
+            Operators are rejecting >20% of detections. Consider reviewing confidence
+            thresholds or triggering a detector re-evaluation.
+          runbook: "ops/runbooks/model-update.md"
+
+      - alert: CriticalFalsePositiveRate
+        expr: xray:fp_rate_1h > 0.40
+        for: 5m
+        labels:
+          severity: critical
+          team:     mlops
+        annotations:
+          summary:     "Detector FP rate > 40% — model may be degraded"
+          description: >
+            FP rate {{ $value | humanizePercentage }}. Model is producing excessive
+            false alarms. Operator workload is unsustainable. Immediate re-evaluation required.
+
+      # ── False Negative rate (rolling 24h) ───────────────────────────────────
+      # FN = operator annotated a missed region (ground truth not caught by detector)
+      - record: xray:fn_rate_24h
+        expr: >
+          increase(xray_missed_region_total[24h])
+          /
+          clamp_min(increase(xray_detections_total[24h]) + increase(xray_missed_region_total[24h]), 1)
+
+      - alert: ElevatedFalseNegativeRate
+        expr: xray:fn_rate_24h > 0.03
+        for: 30m
+        labels:
+          severity: critical
+          team:     mlops
+        annotations:
+          summary:     "Detector FN rate > 3% — missed threats"
+          description: >
+            Operators have annotated {{ $value | humanizePercentage }} missed detections
+            in the last 24h. This means the detector is MISSING real threats.
+            Escalate immediately and consider offline mode with 100% manual inspection.
+          runbook: "ops/runbooks/model-update.md"
+
+      # ── Confidence score distribution drift (PSI proxy) ─────────────────────
+      # Alert if median detection score drops significantly (distribution shift)
+      - record: xray:detector_score_p50
+        expr: histogram_quantile(0.50, rate(xray_detection_score_bucket[6h]))
+
+      - alert: DetectorScoreDistributionDrift
+        expr: |
+          (
+            xray:detector_score_p50 < 0.40
+          ) and (
+            rate(xray_detections_total[6h]) > 0
+          )
+        for: 30m
+        labels:
+          severity: warning
+          team:     mlops
+        annotations:
+          summary: "Detector median confidence score dropped below 0.40"
+          description: >
+            Median detection score is {{ $value | humanize }}. This may indicate
+            domain shift (new contraband types, scanner calibration drift, or
+            image quality degradation). Review recent scan images.
+
+      # ── VLM inference latency ───────────────────────────────────────────────
+      - record: xray:vlm_latency_p99
+        expr: histogram_quantile(0.99, rate(xray_vlm_inference_duration_seconds_bucket[5m]))
+
+      - alert: VLMLatencyHigh
+        expr: xray:vlm_latency_p99 > 10
+        for: 5m
+        labels:
+          severity: warning
+          team:     mlops
+        annotations:
+          summary:     "VLM p99 latency > 10s"
+          description: >
+            VLM inference p99 is {{ $value | humanizeDuration }}.
+            Operators are waiting too long for verdict guidance.
+            Check GPU utilisation and model quantisation.
+
+      - alert: VLMLatencyCritical
+        expr: xray:vlm_latency_p99 > 30
+        for: 5m
+        labels:
+          severity: critical
+          team:     mlops
+        annotations:
+          summary: "VLM p99 latency > 30s — verdicts are stalling"
+
+      # ── Detector inference latency ──────────────────────────────────────────
+      - record: xray:detector_latency_p99
+        expr: histogram_quantile(0.99, rate(xray_detector_inference_duration_seconds_bucket[5m]))
+
+      - alert: DetectorLatencyHigh
+        expr: xray:detector_latency_p99 > 2
+        for: 5m
+        labels:
+          severity: warning
+          team:     mlops
+        annotations:
+          summary: "Detector p99 latency > 2s — scan throughput may be impacted"
+
+      # ── Model weight integrity ───────────────────────────────────────────────
+      # Exposed by the API on startup: xray_model_weight_valid{model} 0|1
+      - alert: ModelWeightChecksumFailed
+        expr: xray_model_weight_valid == 0
+        for: 1m
+        labels:
+          severity: critical
+          team:     security
+        annotations:
+          summary:     "Model weight SHA-256 checksum FAILED — possible tampering"
+          description: >
+            Model {{ $labels.model }} failed its integrity check on startup.
+            The deployment must be rolled back immediately. Do not trust results.
+          runbook: "ops/runbooks/incident-response.md"

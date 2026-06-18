@@ -1,0 +1,34 @@
+# Ultralytics dataset config for the unified weapons detector.
+#
+# The class list MUST stay in lock-step with detector.taxonomy.WEAPON_CLASSES —
+# index == class id. data/prepare.py asserts this at conversion time so the two
+# can never silently diverge (a swapped index = mislabeled training data).
+#
+# Layout produced by prepare.py (YOLO format):
+#   <root>/images/{train,val,test}/*.png
+#   <root>/labels/{train,val,test}/*.txt    # one "cls cx cy w h" per line, normalized
+#
+# Split discipline (non-negotiable for honest eval):
+#   train  — SIXray + PIDray + OPIXray train splits, mixed.
+#   val    — held-out, used for early-stopping / hyperparam choice ONLY.
+#   test   — NEVER seen in training/tuning. Prefer a *different scanner* than
+#            train (cross-scanner generalization). The PIDray "hidden"/hard
+#            subset and OPIXray OL2/OL3 go here so the headline recall number is
+#            measured under occlusion, not on easy frames.
+#   calib  — a 4th split, matched detections only, used to fit the Platt
+#            calibrator (eval/calibration.py). Kept apart from test so we never
+#            report calibration on the data it was fit on.
+
+path: /data/xray/weapons_unified   # override per box
+train: images/train
+val: images/val
+test: images/test
+
+# index -> name : keep identical to taxonomy.WEAPON_CLASSES
+names:
+  0: gun
+  1: knife
+  2: scissors
+  3: wrench
+  4: pliers
+  5: hammer

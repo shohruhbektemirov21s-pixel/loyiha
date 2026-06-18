@@ -1,0 +1,154 @@
+---
+# System health alerts — disk, memory, GPU, database, service availability.
+
+groups:
+
+  - name: system_health
+    interval: 30s
+    rules:
+
+      # ── Disk space ───────────────────────────────────────────────────────────
+      - alert: DiskSpaceWarning
+        expr: |
+          (node_filesystem_avail_bytes{mountpoint=~"(/|/var/lib.*)"} /
+           node_filesystem_size_bytes{mountpoint=~"(/|/var/lib.*)"}) < 0.20
+        for: 5m
+        labels:
+          severity: warning
+          team:     ops
+        annotations:
+          summary:     "Disk < 20% free on {{ $labels.mountpoint }}"
+          description: "{{ $value | humanizePercentage }} free on {{ $labels.instance }}:{{ $labels.mountpoint }}"
+
+      - alert: DiskSpaceCritical
+        expr: |
+          (node_filesystem_avail_bytes{mountpoint=~"(/|/var/lib.*)"} /
+           node_filesystem_size_bytes{mountpoint=~"(/|/var/lib.*)"}) < 0.05
+        for: 1m
+        labels:
+          severity: critical
+          team:     ops
+        annotations:
+          summary:     "CRITICAL: disk < 5% free on {{ $labels.mountpoint }} — system may fail"
+          description: "Immediate action required. Purge old images or expand storage."
+
+      # ── Image store growth (scan blobs) ─────────────────────────────────────
+      - alert: ImageStoreGrowthHigh
+        expr: |
+          increase(node_filesystem_size_bytes{mountpoint="/var/lib/xray/store"}[24h]) > 50e9
+        for: 1h
+        labels:
+          severity: warning
+          team:     ops
+        annotations:
+          summary: "Image store grew > 50 GB in 24h — check retention policy"
+
+      # ── GPU memory ───────────────────────────────────────────────────────────
+      # Requires dcgm-exporter or nvidia_gpu_exporter on host
+      - alert: GPUMemoryHigh
+        expr: |
+          DCGM_FI_DEV_FB_USED / DCGM_FI_DEV_FB_FREE > 0.90
+        for: 5m
+        labels:
+          severity: warning
+          team:     mlops
+        annotations:
+          summary: "GPU memory > 90% used — risk of OOM on VLM or detector"
+
+      # ── RAM ──────────────────────────────────────────────────────────────────
+      - alert: MemoryPressure
+        expr: |
+          (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) > 0.85
+        for: 10m
+        labels:
+          severity: warning
+          team:     ops
+        annotations:
+          summary: "Host memory > 85% used"
+
+      # ── Service availability ─────────────────────────────────────────────────
+      - alert: APIDown
+        expr: up{job="xray_api"} == 0
+        for: 30s
+        labels:
+          severity: critical
+          team:     ops
+        annotations:
+          summary: "X-ray API is DOWN — operators cannot submit decisions"
+
+      - alert: DetectorDown
+        expr: up{job="xray_detector"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          team:     mlops
+        annotations:
+          summary: "Detector service is DOWN — no automated analysis"
+
+      - alert: VLMDown
+        expr: up{job="xray_vlm"} == 0
+        for: 2m
+        labels:
+          severity: warning
+          team:     mlops
+        annotations:
+          summary: "VLM (verdict generator) is DOWN — operators will not receive AI guidance"
+          description: "System continues to function; operators must decide without AI support."
+
+      - alert: PostgresDown
+        expr: up{job="postgres"} == 0
+        for: 30s
+        labels:
+          severity: critical
+          team:     ops
+        annotations:
+          summary: "PostgreSQL is DOWN — all data persistence is offline"
+
+      # ── Database connection pool ─────────────────────────────────────────────
+      - alert: DBConnectionsHigh
+        expr: pg_stat_activity_count > 40
+        for: 5m
+        labels:
+          severity: warning
+          team:     ops
+        annotations:
+          summary: "PostgreSQL connections > 40 (limit=50) — pool exhaustion risk"
+
+      # ── Backup freshness ─────────────────────────────────────────────────────
+      # xray_last_backup_timestamp_seconds is a gauge pushed by backup.sh
+      - alert: BackupStale
+        expr: |
+          (time() - xray_last_backup_timestamp_seconds) > 86400
+        for: 1h
+        labels:
+          severity: warning
+          team:     ops
+        annotations:
+          summary: "Last successful backup is > 24h old"
+          runbook: "ops/runbooks/disaster-recovery.md"
+
+      - alert: BackupMissing
+        expr: absent(xray_last_backup_timestamp_seconds)
+        for: 2h
+        labels:
+          severity: warning
+          team:     ops
+        annotations:
+          summary: "Backup timestamp metric is missing — backup may never have run"
+
+      # ── Acquisition pipeline ─────────────────────────────────────────────────
+      - alert: AcquisitionSilence
+        # No new scans in 45 minutes during operational hours (06:00–22:00 local)
+        expr: |
+          (
+            increase(xray_detections_total[45m]) == 0
+          ) and (
+            (hour() >= 6) and (hour() < 22)
+          )
+        for: 10m
+        labels:
+          severity: warning
+          team:     ops
+        annotations:
+          summary: "No new scans for 45 minutes during operational hours"
+          description: "Check acquisition pipeline, scanner connection, and hot-folder."

@@ -1,0 +1,95 @@
+# Prometheus scrape configuration — all targets are internal Docker service names.
+# No remote_write, no remote_read, no external alertmanager.
+
+global:
+  scrape_interval:     15s
+  evaluation_interval: 15s
+  scrape_timeout:      10s
+
+  # No external labels (no federation, no remote storage)
+  external_labels:
+    deployment: xray-onprem
+
+# ---------------------------------------------------------------------------
+# Alerting
+# ---------------------------------------------------------------------------
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: [ "alertmanager:9093" ]
+      timeout: 5s
+
+# ---------------------------------------------------------------------------
+# Rule files
+# ---------------------------------------------------------------------------
+rule_files:
+  - /etc/prometheus/rules/model_drift.yml
+  - /etc/prometheus/rules/system_health.yml
+  - /etc/prometheus/rules/security.yml
+  - /etc/prometheus/rules/sla.yml
+
+# ---------------------------------------------------------------------------
+# Scrape targets
+# ---------------------------------------------------------------------------
+scrape_configs:
+
+  # ── Prometheus self-monitoring ──────────────────────────────────────────────
+  - job_name: prometheus
+    static_configs:
+      - targets: [ "localhost:9090" ]
+    metrics_path: /metrics
+
+  # ── FastAPI (custom xray_* metrics) ────────────────────────────────────────
+  - job_name: xray_api
+    static_configs:
+      - targets: [ "api:8000" ]
+    metrics_path: /metrics
+    scrape_interval: 15s
+
+  # ── Detector (inference latency, GPU utilisation) ───────────────────────────
+  - job_name: xray_detector
+    static_configs:
+      - targets: [ "detector:8001" ]
+    metrics_path: /metrics
+    scrape_interval: 15s
+
+  # ── VLM (llama.cpp built-in /metrics) ──────────────────────────────────────
+  - job_name: xray_vlm
+    static_configs:
+      - targets: [ "vlm:8080" ]
+    metrics_path: /metrics
+    scrape_interval: 30s    # VLM metrics change more slowly
+
+  # ── PostgreSQL (via postgres_exporter) ─────────────────────────────────────
+  # NOTE: requires adding prom/postgres-exporter as a service in docker-compose.
+  # See ops/postgres-exporter.yml for the sidecar definition.
+  - job_name: postgres
+    static_configs:
+      - targets: [ "postgres-exporter:9187" ]
+    scrape_interval: 30s
+
+  # ── nginx (via nginx-prometheus-exporter) ───────────────────────────────────
+  - job_name: nginx
+    static_configs:
+      - targets: [ "nginx-exporter:9113" ]
+    scrape_interval: 30s
+
+  # ── Grafana ──────────────────────────────────────────────────────────────────
+  - job_name: grafana
+    static_configs:
+      - targets: [ "grafana:3000" ]
+    metrics_path: /metrics
+    scrape_interval: 60s
+
+  # ── Alertmanager ─────────────────────────────────────────────────────────────
+  - job_name: alertmanager
+    static_configs:
+      - targets: [ "alertmanager:9093" ]
+    scrape_interval: 60s
+
+  # ── Node exporter (host hardware: CPU, RAM, disk, GPU NVML) ─────────────────
+  # Runs on the host, exposed only on mon-net via host networking or explicit port.
+  - job_name: node
+    static_configs:
+      - targets: [ "host.docker.internal:9100" ]
+    scrape_interval: 30s

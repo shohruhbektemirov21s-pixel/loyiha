@@ -1,0 +1,74 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  *, *::before, *::after {
+    box-sizing: border-box;
+  }
+
+  html {
+    font-family: "Inter", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    background: #0f1117;
+    color: #f1f5f9;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+  }
+
+  /* Focus ring — always visible, high-contrast */
+  :focus-visible {
+    outline: 2px solid #3b82f6;
+    outline-offset: 2px;
+  }
+
+  /* Scrollbar — minimal, matches theme */
+  ::-webkit-scrollbar        { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track  { background: transparent; }
+  ::-webkit-scrollbar-thumb  { background: #2a2d3a; border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: #3a3f55; }
+
+  /* Screen-reader only utility */
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border-width: 0;
+  }
+}
+
+@layer utilities {
+  /* Tailwind extended colours not in config — surface aliases */
+  .bg-surface          { background-color: #0f1117; }
+  .bg-surface-card     { background-color: #1a1d27; }
+  .bg-surface-border   { background-color: #2a2d3a; }
+  .bg-surface-hover    { background-color: #22263a; }
+  .border-surface-border { border-color: #2a2d3a; }
+  .text-content-primary   { color: #f1f5f9; }
+  .text-content-secondary { color: #94a3b8; }
+  .text-content-muted     { color: #475569; }
+
+  /* Risk band backgrounds / borders / text */
+  .bg-risk-high-bg    { background-color: #3b0a0a; }
+  .bg-risk-medium-bg  { background-color: #3b2000; }
+  .bg-risk-low-bg     { background-color: #0f1f3b; }
+  .bg-risk-clear-bg   { background-color: #052e16; }
+  .border-risk-high-border   { border-color: #7f1d1d; }
+  .border-risk-medium-border { border-color: #92400e; }
+  .border-risk-low-border    { border-color: #1e3a8a; }
+  .border-risk-clear-border  { border-color: #14532d; }
+  .text-risk-high-text   { color: #fca5a5; }
+  .text-risk-medium-text { color: #fcd34d; }
+  .text-risk-low-text    { color: #93c5fd; }
+  .text-risk-clear-text  { color: #86efac; }
+}
