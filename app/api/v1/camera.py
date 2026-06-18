@@ -30,7 +30,11 @@ import time
 import uuid
 from datetime import datetime, timezone
 
+import asyncio
+import os
+
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response, status
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
@@ -350,3 +354,253 @@ async def get_frame(
     if data is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Frame not found.")
     return Response(content=data, media_type="image/jpeg")
+
+
+# ===========================================================================
+# UZLUKSIZ VIDEO OQIMI + QWEN DOIMIY TAHLIL
+# ===========================================================================
+# Mavjud bitta-snapshot `/camera/capture` flow'i o'zgarmaydi. Quyidagilar uning
+# YONIDA yangi uzluksiz oqimni qo'shadi:
+#   GET  /v1/camera/live.mjpg     — MJPEG jonli preview (?token= bilan)
+#   POST /v1/camera/stream/start  — uzluksiz capture + tahlil loop'ini boshlaydi
+#   POST /v1/camera/stream/stop   — loop va kamerani to'xtatadi, resurslarni tozalaydi
+#   GET  /v1/camera/stream/status — joriy holat
+#
+# Bitta jarayonda bitta faol oqim. Manager modul darajasida singleton — start/
+# stop/status/live.mjpg shu obyektni ulashadi. Asyncio bilan himoyalangan.
+
+
+class _StreamManager:
+    """Faol video oqimi va doimiy tahlil loop'ini boshqaradigan singleton.
+
+    Bitta jarayonda bitta kamera oqimi bo'ladi. ``start`` idempotent. ``stop``
+    capture thread va VideoCapture/VideoWriter ni to'g'ri release qiladi
+    (thread leak bo'lmasin).
+    """
+
+    def __init__(self) -> None:
+        self._capture = None      # camera.stream.VideoStreamCapture
+        self._analyzer = None     # camera.stream.ContinuousAnalyzer
+        self._lock = asyncio.Lock()
+
+    @property
+    def running(self) -> bool:
+        return self._analyzer is not None and self._analyzer.state.running
+
+    async def start(
+        self,
+        *,
+        device: int | str | None,
+        cadence_s: float | None,
+        detector,
+        generator,
+        lane_id: str | None,
+    ) -> dict:
+        from camera.composition import build_camera_config
+        from camera.stream import ContinuousAnalyzer, VideoStreamCapture
+        from app.deps import ServiceNotImplemented
+
+        async with self._lock:
+            if self.running:
+                return self._status_dict()  # idempotent
+
+            cfg = build_camera_config()
+            if device is not None:
+                cfg.device = int(device) if (isinstance(device, str) and device.isdigit()) else device
+
+            cad = cadence_s if cadence_s is not None else float(
+                os.environ.get("XRAY_CAM_CADENCE_S", "2.0")
+            )
+            record = os.environ.get("XRAY_CAM_RECORD", "").strip().lower() in ("1", "true", "yes", "on")
+
+            capture = VideoStreamCapture(cfg, record=record)
+            # cv2 ochish bloklovchi — threadpool'da.
+            try:
+                await run_in_threadpool(capture.open)
+            except Exception as exc:  # noqa: BLE001 — kamera ochilmasa 503
+                try:
+                    await run_in_threadpool(capture.close)
+                except Exception:
+                    pass
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail=f"Kamera oqimi ochilmadi: {exc}",
+                )
+
+            from app.api.v1.ws import get_hub
+            try:
+                hub = get_hub()
+                broadcast = hub.broadcast_lane
+            except RuntimeError:
+                # Hub hali init bo'lmagan (masalan testlarда) — jim no-op.
+                async def broadcast(_lane, _msg):  # type: ignore[misc]
+                    return None
+
+            analyzer = ContinuousAnalyzer(
+                capture,
+                detector=detector,
+                generator=generator,
+                broadcast=broadcast,
+                lane_id=lane_id,
+                cadence_s=cad,
+                not_implemented_exc=ServiceNotImplemented,
+            )
+            analyzer.start()
+
+            self._capture = capture
+            self._analyzer = analyzer
+            log.info("Kamera oqimi boshlandi (device=%s cadence=%.2fs record=%s).", cfg.device, cad, record)
+            return self._status_dict()
+
+    async def stop(self) -> dict:
+        async with self._lock:
+            if self._analyzer is not None:
+                await self._analyzer.stop()
+            if self._capture is not None:
+                await run_in_threadpool(self._capture.close)
+            status_dict = self._status_dict()
+            self._analyzer = None
+            self._capture = None
+            log.info("Kamera oqimi to'xtatildi va resurslar tozalandi.")
+            return status_dict
+
+    def status(self) -> dict:
+        return self._status_dict()
+
+    def latest_jpeg(self) -> bytes | None:
+        if self._capture is None:
+            return None
+        return self._capture.latest_jpeg()
+
+    def _status_dict(self) -> dict:
+        if self._analyzer is None or self._capture is None:
+            return {
+                "running": False,
+                "device": None,
+                "cadence_s": None,
+                "last_analysis_ts": None,
+                "frames_analyzed": 0,
+                "recording": False,
+            }
+        st = self._analyzer.state
+        return {
+            "running": st.running,
+            "device": st.device,
+            "cadence_s": st.cadence_s,
+            "last_analysis_ts": st.last_analysis_ts,
+            "frames_analyzed": st.frames_analyzed,
+            "recording": self._capture.recording,
+            "record_path": str(self._capture.record_path) if self._capture.record_path else None,
+            "last_risk_band": st.last_risk_band,
+        }
+
+
+# Modul darajasidagi singleton. app/main.py lifespan shutdown'da to'xtatadi.
+_stream_manager = _StreamManager()
+
+
+def get_stream_manager() -> _StreamManager:
+    return _stream_manager
+
+
+# ---------------------------------------------------------------------------
+# Request/response shapes
+# ---------------------------------------------------------------------------
+class StreamStartRequest(BaseModel):
+    device: int | str | None = None
+    cadence_s: float | None = None
+
+
+# ---------------------------------------------------------------------------
+# MJPEG live preview
+# ---------------------------------------------------------------------------
+def _mjpeg_generator(manager: _StreamManager):
+    """multipart/x-mixed-replace MJPEG oqimi. Eng so'nggi kadrni uzatadi."""
+    boundary = b"--frame\r\n"
+    while True:
+        if not manager.running:
+            break
+        jpeg = manager.latest_jpeg()
+        if jpeg is not None:
+            yield boundary
+            yield b"Content-Type: image/jpeg\r\n"
+            yield b"Content-Length: " + str(len(jpeg)).encode() + b"\r\n\r\n"
+            yield jpeg
+            yield b"\r\n"
+        time.sleep(0.05)  # ~20 fps cap; CPU/bandwidth himoyasi
+
+
+@router.get(
+    "/camera/live.mjpg",
+    summary="Live MJPEG preview (token via query param for <img src>)",
+    responses={200: {"content": {"multipart/x-mixed-replace": {}}}},
+)
+async def live_mjpg(
+    token: str = Query(default="", description="JWT access token (query param for <img>)."),
+) -> StreamingResponse:
+    # Yengil auth: bypass rejimi yoki query param'dagi yaroqli JWT (<img>
+    # header qo'ya olmaydi — get_frame bilan bir xil pattern).
+    if not get_settings().auth_bypass:
+        from jose import JWTError
+        from app.auth.backend import decode_access_token
+        try:
+            decode_access_token(token)
+        except JWTError:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token.")
+
+    manager = get_stream_manager()
+    if not manager.running:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Kamera oqimi ishlamayapti. Avval /v1/camera/stream/start ni chaqiring.",
+        )
+    return StreamingResponse(
+        _mjpeg_generator(manager),
+        media_type="multipart/x-mixed-replace; boundary=frame",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Stream lifecycle endpoints (operator+ JWT)
+# ---------------------------------------------------------------------------
+@router.post(
+    "/camera/stream/start",
+    summary="Start the continuous capture + Qwen analysis loop (idempotent)",
+)
+async def stream_start(
+    body: StreamStartRequest | None = None,
+    claims: TokenClaims = Depends(require_operator),
+    detector: Detector = Depends(provide_detector),
+    generator: VerdictGenerator = Depends(provide_verdict_generator),
+) -> dict:
+    body = body or StreamStartRequest()
+    lane_id = claims.lane_ids[0] if claims.lane_ids else None
+    manager = get_stream_manager()
+    return await manager.start(
+        device=body.device,
+        cadence_s=body.cadence_s,
+        detector=detector,
+        generator=generator,
+        lane_id=lane_id,
+    )
+
+
+@router.post(
+    "/camera/stream/stop",
+    summary="Stop the continuous loop and release the camera",
+)
+async def stream_stop(
+    claims: TokenClaims = Depends(require_operator),
+) -> dict:
+    manager = get_stream_manager()
+    return await manager.stop()
+
+
+@router.get(
+    "/camera/stream/status",
+    summary="Current continuous-stream status",
+)
+async def stream_status(
+    claims: TokenClaims = Depends(require_operator),
+) -> dict:
+    return get_stream_manager().status()

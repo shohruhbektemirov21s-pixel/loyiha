@@ -25,5 +25,14 @@ Environment variables (also see camera/driver.py docstring):
 
 from camera.driver import USBCameraDriver, CameraConfig, CameraError
 from camera.composition import build_camera_driver
+from camera.stream import ContinuousAnalyzer, StreamState, VideoStreamCapture
 
-__all__ = ["USBCameraDriver", "CameraConfig", "CameraError", "build_camera_driver"]
+__all__ = [
+    "USBCameraDriver",
+    "CameraConfig",
+    "CameraError",
+    "build_camera_driver",
+    "VideoStreamCapture",
+    "ContinuousAnalyzer",
+    "StreamState",
+]

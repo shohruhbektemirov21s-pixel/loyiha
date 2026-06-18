@@ -187,6 +187,13 @@ async def lifespan(app: FastAPI):
     _wire_vlm(app, settings)
     _wire_datalayer(app, settings)
     yield
+    # Kamera uzluksiz oqimini to'xtatamiz — capture thread va VideoCapture
+    # to'g'ri release qilinsin, thread leak bo'lmasin.
+    try:
+        from app.api.v1.camera import get_stream_manager
+        await get_stream_manager().stop()
+    except Exception as exc:  # noqa: BLE001 — shutdown'da xato boshqa tozalashni to'smasin
+        log.warning("kamera oqimini to'xtatishda xato: %s", exc)
     from app.db.session import close_db
     await close_db()
     log.info("shutting down %s", settings.app_name)

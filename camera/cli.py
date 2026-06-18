@@ -76,11 +76,41 @@ def cmd_snapshot(args) -> None:
         driver.close()
 
 
+def cmd_stream(args) -> None:
+    """Uzluksiz video oqimini ishga tushiradi va eng so'nggi kadr holatini chop etadi.
+
+    Bu API'siz, lokal sinov uchun: kamera fonda uzluksiz o'qiydi. (Doimiy Qwen
+    tahlili API jarayonida ishlaydi — bu yerda faqat capture ko'rsatiladi.)
+    """
+    from camera.composition import build_camera_config
+    from camera.stream import VideoStreamCapture
+
+    record = (args.record or "").strip().lower() in ("1", "true", "yes", "on")
+    cap = VideoStreamCapture(build_camera_config(), record=record)
+    cap.open()
+    print(f"Video oqimi ochildi (device={cap.device}, record={cap.recording}). Ctrl+C to'xtatadi.")
+    try:
+        cap.wait_first_frame(5.0)
+        for _ in range(args.stream):
+            jpeg = cap.latest_jpeg()
+            kb = len(jpeg) // 1024 if jpeg else 0
+            print(f"  kadrlar={cap.frames_read}  so'nggi JPEG={kb}KB")
+            time.sleep(1.0)
+    except KeyboardInterrupt:
+        print("\nTo'xtatilmoqda…")
+    finally:
+        cap.close()
+        if cap.record_path:
+            print(f"Sessiya videosi: {cap.record_path}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="USB camera driver CLI")
     parser.add_argument("--list",     action="store_true",   help="List available cameras")
     parser.add_argument("--capture",  type=int, default=0,   help="Capture N motion-triggered frames")
     parser.add_argument("--snapshot", action="store_true",   help="One-shot immediate capture")
+    parser.add_argument("--stream",   type=int, default=0,   help="Run continuous video stream for N seconds")
+    parser.add_argument("--record",   type=str, default=None, help="Record session video (1/true) with --stream")
     parser.add_argument("--out",      type=str, default=None, help="Output path/directory")
     args = parser.parse_args()
 
@@ -90,6 +120,8 @@ def main() -> None:
         cmd_snapshot(args)
     elif args.capture > 0:
         cmd_capture(args)
+    elif args.stream > 0:
+        cmd_stream(args)
     else:
         parser.print_help()
         sys.exit(1)
