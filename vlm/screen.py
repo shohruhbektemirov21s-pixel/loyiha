@@ -27,7 +27,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import time
+from collections import Counter
 from dataclasses import dataclass, field
 from typing import Literal
 
@@ -56,14 +58,16 @@ SYS = (
 )
 SHOT = (
     "Quyida FAQAT format namunasi (qiymatlarni ko'chirma, har bir maydonni o'zing rasmga qarab to'ldir):\n"
+    "TAVSIF: <1-2 jumla: rasmda aniq nima ko'rinmoqda — vagon tuzilishi, yuk shakli, zichlik, anomaliya bo'lsa>\n"
     "VAGON_TURI: <rasmda ko'rgan vagon turi>\n"
     "ASOSIY_YUK: <rasmda ko'rgan yuk>\n"
     "QORADORI: YO'Q\nQUROL: YO'Q\nTAMAKI: YO'Q\nBOSHQA: YO'Q\nXAVF: PAST"
 )
 USER = (
-    SHOT + "\n\nEndi BERILGAN rasmni xuddi shu formatда tahlil qil. Dalil bo'lmasa YO'Q yoz, "
-    "qiymatlarni namunadan ko'chirma:\n"
-    "VAGON_TURI:\nASOSIY_YUK:\nQORADORI:\nQUROL:\nTAMAKI:\nBOSHQA:\nXAVF:"
+    SHOT + "\n\nEndi BERILGAN rasmni DIQQAT bilan ko'rib chiq. Avval TAVSIF da ko'rganingni "
+    "aniq bayon qil, keyin shu kuzatuvga TAYANIB qolgan maydonlarni to'ldir. Dalil bo'lmasa "
+    "YO'Q yoz, qiymatlarni namunadan ko'chirma:\n"
+    "TAVSIF:\nVAGON_TURI:\nASOSIY_YUK:\nQORADORI:\nQUROL:\nTAMAKI:\nBOSHQA:\nXAVF:"
 )
 
 # Bayroq kalitlari (prompt maydonlari) -> kanonik javob kaliti.
@@ -73,7 +77,11 @@ _FLAG_FIELDS: dict[str, str] = {
     "TAMAKI": "tobacco",
     "BOSHQA": "other",
 }
-_STRUCT_FIELDS = {"VAGON_TURI", "ASOSIY_YUK", "QORADORI", "QUROL", "TAMAKI", "BOSHQA", "XAVF"}
+_STRUCT_FIELDS = {"TAVSIF", "VAGON_TURI", "ASOSIY_YUK", "QORADORI", "QUROL", "TAMAKI", "BOSHQA", "XAVF"}
+
+# Bayroq jiddiylik darajasi (voting + eskalatsiya uchun).
+_FLAG_RANK = {"YO'Q": 0, "SHUBHALI": 1, "BOR": 2}
+_RANK_FLAG = {0: "YO'Q", 1: "SHUBHALI", 2: "BOR"}
 
 RiskBand = Literal["clear", "low", "medium", "high"]
 
@@ -160,6 +168,22 @@ def risk_from_flags(flags: dict[str, str]) -> RiskBand:
     return "clear"
 
 
+def _vote_text(values: list[str]) -> str:
+    """Erkin matn maydoni uchun eng ko'p uchragan (mode) qiymat.
+
+    Bo'sh qiymatlar tashlanadi. Teng kelsa — eng to'lig'i (uzunrog'i). Taqqoslash
+    katta-kichik harf va ortiqcha bo'shliqqa sezgir emas.
+    """
+    cleaned = [v.strip() for v in values if v and v.strip()]
+    if not cleaned:
+        return ""
+    counts = Counter(v.lower() for v in cleaned)
+    best_key, best_n = counts.most_common(1)[0]
+    # Bir nechta qiymat bir xil chastotada bo'lsa — eng uzunini tanlaymiz.
+    tied = [v for v in cleaned if counts[v.lower()] == best_n]
+    return max(tied, key=len)
+
+
 @dataclass
 class CargoScreener:
     """Yuk rentgen rasmini Qwen3-VL orqali skrining qiluvchi yadro.
@@ -172,32 +196,44 @@ class CargoScreener:
 
     backend: VLMBackend
     guard: LanguageGuard = field(default_factory=get_guard)
-    temperature: float = 0.1
-    max_tokens: int = 300
+    temperature: float = 0.2
+    max_tokens: int = 512
+    # Aniqlik uchun ko'p o'tish (self-consistency). Har bir rasm `passes` marta
+    # mustaqil tahlil qilinadi, natijalar OVOZ berish bilan birlashtiriladi —
+    # bitta o'tishdagi format/yanglish xatosi bartaraf bo'ladi. Vaqt `passes`
+    # marta ko'proq, lekin aniqroq. XRAY_SCREEN_PASSES bilan sozlanadi.
+    passes: int = field(
+        default_factory=lambda: max(1, int(os.environ.get("XRAY_SCREEN_PASSES", "3")))
+    )
 
     async def screen_one(self, image_bytes: bytes, filename: str) -> ScreenResult:
-        """Bitta rasmni skrining qiladi. Fail-safe: xato -> ok=False, risk=medium."""
+        """Bitta rasmni skrining qiladi (ko'p o'tishli, ovoz berish bilan).
+
+        Fail-safe: barcha o'tishlar xato bersa -> ok=False, risk=medium.
+        """
         t0 = time.monotonic()
-        try:
-            raw = await self._infer(image_bytes)
-        except Exception as exc:  # noqa: BLE001 — Ollama timeout/transport/parse
-            # Fail-safe: jim soxta "toza" emas. Konservativ medium + xato sababi.
-            dt = time.monotonic() - t0
-            log.warning("screen_one inference xatosi (%s): %s", filename, exc)
+        raws: list[str] = []
+        last_exc: Exception | None = None
+        for i in range(self.passes):
+            try:
+                raws.append(await self._infer(image_bytes))
+            except Exception as exc:  # noqa: BLE001 — Ollama timeout/transport
+                last_exc = exc
+                log.warning("screen_one o'tish %d/%d xatosi (%s): %s",
+                            i + 1, self.passes, filename, exc)
+
+        if not raws:
+            # Hamma o'tish muvaffaqiyatsiz — fail-safe, jim soxta "toza" emas.
             return ScreenResult(
-                filename=filename,
-                ok=False,
-                wagon_type=_FALLBACK_WAGON,
-                main_cargo=_FALLBACK_CARGO,
+                filename=filename, ok=False,
+                wagon_type=_FALLBACK_WAGON, main_cargo=_FALLBACK_CARGO,
                 flags={name: "SHUBHALI" for name in _FLAG_FIELDS.values()},
-                risk_band="medium",
-                summary_uz=_FALLBACK_SUMMARY,
-                seconds=dt,
-                error=f"VLM inference xatosi: {exc}",
+                risk_band="medium", summary_uz=_FALLBACK_SUMMARY,
+                seconds=time.monotonic() - t0,
+                error=f"VLM inference xatosi (barcha {self.passes} o'tish): {last_exc}",
             )
 
-        result = self._build_result(raw, filename, time.monotonic() - t0)
-        return result
+        return self._aggregate(raws, filename, time.monotonic() - t0)
 
     async def screen_many(
         self, items: list[tuple[bytes, str]]
@@ -223,30 +259,60 @@ class CargoScreener:
             max_tokens=self.max_tokens,
         )
 
-    def _build_result(self, raw: str, filename: str, seconds: float) -> ScreenResult:
-        """Xom javobni parse qilib, guard'dan o'tkazib, kanonik natija quradi."""
-        d = parse(raw)
+    def _aggregate(self, raws: list[str], filename: str, seconds: float) -> ScreenResult:
+        """Ko'p o'tish javoblarini OVOZ berish bilan birlashtiradi (self-consistency).
 
-        # 1. Bayroqlar — har biri normallashtiriladi (default eskalatsiya).
-        #    To'liqsiz javob (maydon yo'q) -> SHUBHALI (model faqat eskalatsiya).
+        - vagon_turi / asosiy_yuk: eng ko'p uchragan (mode) qiymat.
+        - har bir bayroq: KONSERVATIV ko'pchilik — flag YO'Q bo'lishi uchun
+          o'tishlarning ko'pchiligi YO'Q deyishi shart; aks holda eskalatsiya.
+        - tavsif: guard'dan o'tgan eng to'liq (uzun) TAVSIF.
+        """
+        parsed = [parse(r) for r in raws]
+        n = len(parsed)
+        need = n // 2 + 1  # qat'iy ko'pchilik
+
+        # --- Bayroqlar: konservativ ko'pchilik (severity bo'yicha) ---
         flags: dict[str, str] = {}
-        missing: list[str] = []
+        any_missing = False
         for prompt_key, canon in _FLAG_FIELDS.items():
-            if prompt_key in d:
-                flags[canon] = _normalize_flag(d[prompt_key])
+            ranks: list[int] = []
+            for d in parsed:
+                if prompt_key in d:
+                    ranks.append(_FLAG_RANK[_normalize_flag(d[prompt_key])])
+                else:
+                    any_missing = True
+                    ranks.append(_FLAG_RANK["SHUBHALI"])  # yo'q maydon -> eskalatsiya
+            yoq = sum(1 for r in ranks if r == 0)
+            bor = sum(1 for r in ranks if r == 2)
+            if bor >= need:
+                flags[canon] = "BOR"
+            elif yoq >= need:
+                flags[canon] = "YO'Q"          # faqat ko'pchilik YO'Q desa toza
             else:
-                flags[canon] = "SHUBHALI"
-                missing.append(prompt_key)
+                flags[canon] = "SHUBHALI"      # tortishuv/noaniq -> eskalatsiya
 
-        wagon = d.get("VAGON_TURI", "").strip() or _FALLBACK_WAGON
-        cargo = d.get("ASOSIY_YUK", "").strip() or _FALLBACK_CARGO
+        # --- Vagon turi / asosiy yuk: eng ko'p uchragan qiymat ---
+        wagon = _vote_text([d.get("VAGON_TURI", "") for d in parsed]) or _FALLBACK_WAGON
+        cargo = _vote_text([d.get("ASOSIY_YUK", "") for d in parsed]) or _FALLBACK_CARGO
 
-        # 2. Summary — Qwen ning to'liq o'zbekcha tavsifi (xom javob).
-        summary = raw.strip() or _FALLBACK_SUMMARY
+        # --- Tavsif (summary): guard'dan o'tgan eng to'liq TAVSIF ---
+        descriptions = [d.get("TAVSIF", "").strip() for d in parsed]
+        descriptions = [t for t in descriptions if t]
+        # Eng uzunidan boshlab guard'dan o'tganini tanlaymiz.
+        summary = ""
+        for t in sorted(descriptions, key=len, reverse=True):
+            if self._text_clean(t):
+                summary = t
+                break
+        if not summary:
+            # TAVSIF yo'q — eng uzun guard-toza xom javobga qaytamiz.
+            for r in sorted(raws, key=len, reverse=True):
+                if self._text_clean(r.strip()):
+                    summary = r.strip()
+                    break
+        summary = summary or _FALLBACK_SUMMARY
 
-        # 3. Til/xavfsizlik guard'i. Erkin matnlarni tekshiramiz — drift yoki
-        #    taqiqlangan "o'tkazib yuborish" iborasi bo'lsa, matnni xavfsiz
-        #    fallback bilan almashtiramiz va bayroqni eskalatsiya tomon suramiz.
+        # --- Guard: yakuniy matnlar drift/clearance/homoglif tutsa eskalatsiya ---
         guard_tripped = False
         guard_kind = ""
         for text in (summary, cargo, wagon):
@@ -255,12 +321,9 @@ class CargoScreener:
             res = self.guard.check(text)
             if not res.passed:
                 v = res.first_violation()
-                # TOO_LONG — bu xavf emas, faqat uzun tavsif (summary uzun bo'lishi
-                # tabiiy). Faqat haqiqiy drift/clearance/homoglif eskalatsiya qiladi.
                 if v and v.kind.value == "too_long":
-                    continue
-                guard_tripped = True
-                guard_kind = v.kind.value if v else "nomalum"
+                    continue  # uzun tavsif xavf emas
+                guard_tripped, guard_kind = True, (v.kind.value if v else "nomalum")
                 break
 
         ok = True
@@ -268,30 +331,27 @@ class CargoScreener:
         if guard_tripped:
             ok = False
             error = f"guard rad etdi: {guard_kind}"
-            summary = _FALLBACK_SUMMARY
-            wagon = _FALLBACK_WAGON
-            cargo = _FALLBACK_CARGO
-            # Eskalatsiya: barcha YO'Q bo'lganini ham SHUBHALI ga ko'taramiz.
-            flags = {k: ("SHUBHALI" if val == "YO'Q" else val) for k, val in flags.items()}
-        elif missing:
-            # Format to'liqsiz — ishonchli "toza" emas; ok=False, lekin matn qoladi.
+            summary, wagon, cargo = _FALLBACK_SUMMARY, _FALLBACK_WAGON, _FALLBACK_CARGO
+            flags = {k: ("SHUBHALI" if v == "YO'Q" else v) for k, v in flags.items()}
+        elif any_missing:
             ok = False
-            error = f"to'liqsiz javob (yo'q maydonlar: {','.join(missing)})"
-
-        # 4. risk_band — DETERMINISTIK, bayroqlardan.
-        risk = risk_from_flags(flags)
+            error = "ba'zi o'tishlarda format to'liqsiz edi (ovoz berishda eskalatsiya qilindi)"
 
         return ScreenResult(
-            filename=filename,
-            ok=ok,
-            wagon_type=wagon,
-            main_cargo=cargo,
-            flags=flags,
-            risk_band=risk,
-            summary_uz=summary,
-            seconds=seconds,
-            error=error,
+            filename=filename, ok=ok, wagon_type=wagon, main_cargo=cargo,
+            flags=flags, risk_band=risk_from_flags(flags),
+            summary_uz=summary, seconds=seconds, error=error,
         )
+
+    def _text_clean(self, text: str) -> bool:
+        """Matn guard'dan (drift/clearance/homoglif) o'tadimi? TOO_LONG bardosh."""
+        if not text.strip():
+            return False
+        res = self.guard.check(text)
+        if res.passed:
+            return True
+        v = res.first_violation()
+        return bool(v and v.kind.value == "too_long")
 
 
 __all__ = [
