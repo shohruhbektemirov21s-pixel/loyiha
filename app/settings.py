@@ -198,6 +198,12 @@ class Settings(BaseSettings):
     # real model descriptions.
     vlm_describe: bool = True
 
+    # -- Cargo image screening (/v1/screen) ---------------------------------
+    # How many independent passes per image (self-consistency voting). Higher =
+    # more accurate but proportionally slower (each pass is one VLM call).
+    # 1 = fast/single-shot; 3 = accurate (default). XRAY_SCREEN_PASSES.
+    screen_passes: int = 3
+
     # -- Active-learning data layer (Hop 4 FeedbackSink) --------------------
     # Set XRAY_DATALAYER_ENABLED=1 to wire the real ActiveLearningLoop.
     # When disabled the FeedbackSink stub returns HTTP 501.

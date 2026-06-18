@@ -321,8 +321,11 @@ class CargoScreener:
             res = self.guard.check(text)
             if not res.passed:
                 v = res.first_violation()
-                if v and v.kind.value == "too_long":
-                    continue  # uzun tavsif xavf emas
+                # Uzunlik (qisqa/uzun) xavf EMAS: "Avtomobil", "Tank vagoni" kabi
+                # qisqa maydon normal. Faqat haqiqiy xavf — kirill/rus/ingliz drift,
+                # homoglif, taqiqlangan "o'tkazib yuborish" iborasi — eskalatsiya.
+                if v and v.kind.value in ("too_long", "too_short"):
+                    continue
                 guard_tripped, guard_kind = True, (v.kind.value if v else "nomalum")
                 break
 
@@ -351,7 +354,8 @@ class CargoScreener:
         if res.passed:
             return True
         v = res.first_violation()
-        return bool(v and v.kind.value == "too_long")
+        # Uzunlik xavf emas — faqat drift/clearance/homoglif matnni rad etadi.
+        return bool(v and v.kind.value in ("too_long", "too_short"))
 
 
 __all__ = [

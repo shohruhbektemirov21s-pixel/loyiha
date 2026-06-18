@@ -187,6 +187,7 @@ def _wire_screener(app: FastAPI, settings: Settings) -> None:
         backend=backend,
         temperature=settings.vlm_temperature,
         max_tokens=settings.vlm_max_tokens,
+        passes=max(1, settings.screen_passes),
     )
     app.dependency_overrides[provide_screener] = lambda: screener
     log.info(
