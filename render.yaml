@@ -92,7 +92,4 @@ services:
       - key: VITE_MOCK
         value: "false"
       - key: VITE_API_URL
-        fromService:
-          type: web
-          name: xray-backend
-          property: url
+        value: https://xray-backend.onrender.com
