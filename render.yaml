@@ -80,11 +80,11 @@ services:
         sync: false
 
   # ── React Vite Static Operator Console ────────────────────
-  - type: static
+  - type: web
     name: xray-console
-    env: static
+    runtime: static
     buildCommand: npm install && npm run build
-    publishPath: console/dist
+    staticPublishPath: console/dist
     plan: free
     envVars:
       - key: VITE_AUTH_BYPASS
