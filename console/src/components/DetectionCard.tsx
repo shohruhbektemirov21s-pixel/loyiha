@@ -1,211 +1,191 @@
-import { ChevronDown, ChevronUp } from "lucide-react";
 import { useState } from "react";
 import type {
   Detection, DetectionVerdict, DetectionJudgement, ThreatCategory,
 } from "../lib/types";
-import { ConfidenceMeter } from "./ConfidenceMeter";
+import { catColor, hexA } from "../lib/theme";
 import {
-  THREAT_CATEGORY, LOCATION_LABEL, SIZE_LABEL,
-  DETECTION_ATTRIBUTES, VERDICT_CONFIDENCE, DETECTION_SCORE,
-  JUDGE_CONFIRM, JUDGE_REJECT, JUDGE_RECLASSIFY,
-  JUDGE_LABEL, MISSED_CATEGORY,
+  THREAT_CATEGORY, JUDGE_CONFIRM, JUDGE_REJECT,
+  JUDGE_LABEL,
 } from "../lib/uz";
-
-// ------------------------------------------------------------------
-// Colour per category
-// ------------------------------------------------------------------
-const CAT_COLOR: Record<ThreatCategory, { border: string; accent: string }> = {
-  firearm:          { border: "border-red-700",    accent: "text-red-400" },
-  explosive:        { border: "border-red-700",    accent: "text-red-400" },
-  bladed_weapon:    { border: "border-orange-700", accent: "text-orange-400" },
-  narcotics:        { border: "border-purple-700", accent: "text-purple-400" },
-  currency:         { border: "border-yellow-700", accent: "text-yellow-400" },
-  organic_anomaly:  { border: "border-cyan-800",   accent: "text-cyan-400" },
-  metallic_anomaly: { border: "border-slate-600",  accent: "text-slate-400" },
-  contraband_other: { border: "border-amber-700",  accent: "text-amber-400" },
-  unknown:          { border: "border-slate-700",  accent: "text-slate-400" },
-};
 
 const CATEGORIES: ThreatCategory[] = [
   "firearm", "explosive", "bladed_weapon", "narcotics",
   "currency", "organic_anomaly", "metallic_anomaly", "contraband_other", "unknown",
 ];
 
-// ------------------------------------------------------------------
+// Judgement → badge label + colour.
+const JUDGE_BADGE: Record<Exclude<DetectionJudgement, "unreviewed">, { label: string; color: string }> = {
+  confirmed:    { label: JUDGE_LABEL.confirmed,    color: "#22c55e" },
+  rejected:     { label: JUDGE_LABEL.rejected,     color: "#ef4444" },
+  reclassified: { label: JUDGE_LABEL.reclassified, color: "#f59e0b" },
+};
+
 interface Props {
-  detection:      Detection;
-  verdict?:       DetectionVerdict;
-  judgement:      DetectionJudgement;
-  corrected?:     ThreatCategory | null;
-  selected:       boolean;
-  onSelect:       () => void;
-  onJudge:        (j: DetectionJudgement, corrected?: ThreatCategory) => void;
+  detection:  Detection;
+  verdict?:   DetectionVerdict;
+  judgement:  DetectionJudgement;
+  corrected?: ThreatCategory | null;
+  selected:   boolean;
+  onSelect:   () => void;
+  onJudge:    (j: DetectionJudgement, corrected?: ThreatCategory) => void;
 }
 
 export function DetectionCard({
   detection, verdict, judgement, corrected, selected, onSelect, onJudge,
 }: Props) {
-  const [expanded, setExpanded]   = useState(false);
-  const [reclass, setReclass]     = useState(false);
-  const [newCat, setNewCat]       = useState<ThreatCategory>(detection.category);
+  const [expanded, setExpanded] = useState(false);
+  const [reclass, setReclass]   = useState(false);
+  const [newCat, setNewCat]     = useState<ThreatCategory>(detection.category);
 
-  const cat    = corrected ?? detection.category;
-  const colors = CAT_COLOR[cat];
-  const isLow  = detection.score < 0.45;
-  // High-severity categories get a red depth glow so the most dangerous
-  // detections read as the most "raised"/salient cards.
-  const isDanger = cat === "firearm" || cat === "explosive" || cat === "bladed_weapon";
+  const cat   = corrected ?? detection.category;
+  const color = catColor(cat);
+  const isLow = detection.score < 0.45;
+
+  const detPct = Math.round(detection.score * 100);
+  const vlmPct = verdict ? Math.round(verdict.confidence * 100) : null;
+
+  const attrs   = detection.attributes ?? {};
+  const material = attrs.material ?? attrs.mean_density ?? "—";
+  const density  = attrs.density ?? attrs.mean_density ?? "—";
+  const pixel    = `x:${detection.box.x} y:${detection.box.y} w:${detection.box.width} h:${detection.box.height}`;
+
+  const badge = judgement !== "unreviewed" ? JUDGE_BADGE[judgement] : null;
+
+  const judgeBtn = (active: boolean, col: string): React.CSSProperties => ({
+    flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
+    padding: "7px 4px", fontSize: 11.5, fontWeight: 600, borderRadius: 8, cursor: "pointer",
+    border: `1px solid ${active ? col : "rgba(255,255,255,0.12)"}`,
+    background: active ? hexA(col, 0.16) : "rgba(255,255,255,0.03)",
+    color: active ? col : "#aebbcf", transition: "all .12s",
+  });
 
   return (
     <div
-      className={`card-3d rounded-xl border bg-depth-card ${colors.border} ${
-        selected
-          ? "bg-surface-hover ring-1 ring-offset-0 shadow-elev-3"
-          : "bg-surface-card hover:bg-surface-hover shadow-elev-2"
-      } ${isDanger ? "shadow-glow-high" : ""} ${isLow ? "opacity-75" : ""}`}
+      onClick={onSelect}
+      role="button"
+      aria-pressed={selected}
+      aria-label={`${THREAT_CATEGORY[cat]} — ${detPct}%`}
+      style={{
+        background: "rgba(255,255,255,0.035)",
+        borderStyle: "solid",
+        borderWidth: "1px 1px 1px 3px",
+        borderColor: (() => {
+          const c = selected ? "rgba(129,140,248,0.55)" : "rgba(255,255,255,0.08)";
+          return `${c} ${c} ${c} ${color}`;
+        })(),
+        borderRadius: 12, padding: "11px 12px", opacity: isLow ? 0.74 : 1,
+        boxShadow: selected ? "0 0 0 1px rgba(129,140,248,0.3),0 8px 22px rgba(99,102,241,0.14)" : undefined,
+        transition: "all .15s", cursor: "pointer",
+      }}
     >
-      {/* Header — the single clickable select target (a real <button>, so no
-          nested-interactive antipattern with the controls below) */}
-      <div className="flex items-start gap-2 p-3">
-        <button
-          type="button"
-          onClick={onSelect}
-          aria-pressed={selected}
-          aria-label={`${THREAT_CATEGORY[cat]} — ${Math.round(detection.score * 100)}%`}
-          className="flex-1 min-w-0 text-left cursor-pointer rounded focus:outline-none focus-visible:ring-1 focus-visible:ring-blue-500"
-        >
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className={`text-sm font-semibold ${colors.accent}`}>
-              {THREAT_CATEGORY[cat]}
+      {/* Header */}
+      <div className="flex items-center justify-between" style={{ gap: 8 }}>
+        <div className="flex items-center min-w-0" style={{ gap: 8 }}>
+          <span style={{ width: 9, height: 9, borderRadius: 2, background: color, flex: "none" }} aria-hidden="true" />
+          <span style={{ fontSize: 13, fontWeight: 600, color }}>{THREAT_CATEGORY[cat]}</span>
+          {isLow && (
+            <span style={{ fontSize: 9, fontWeight: 600, padding: "1px 6px", borderRadius: 999, color: "#94a3b8", background: "rgba(148,163,184,0.12)" }}>
+              past ishonch
             </span>
-            {judgement !== "unreviewed" && (
-              <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${
-                judgement === "confirmed"    ? "bg-green-900/50 text-green-400" :
-                judgement === "rejected"     ? "bg-red-900/50 text-red-400" :
-                "bg-amber-900/50 text-amber-400"
-              }`}>
-                {JUDGE_LABEL[judgement]}
-              </span>
-            )}
-          </div>
-          <p className="text-xs text-content-muted mt-0.5 font-mono">
-            {detection.native_label}
-          </p>
-        </button>
+          )}
+        </div>
+        <div className="flex items-center" style={{ gap: 7, flex: "none" }}>
+          {badge && (
+            <span style={{
+              fontSize: 10.5, fontWeight: 600, padding: "2px 7px", borderRadius: 999,
+              color: badge.color, background: hexA(badge.color, 0.15), border: `1px solid ${hexA(badge.color, 0.4)}`,
+            }}>{badge.label}</span>
+          )}
+          <span
+            role="button"
+            aria-expanded={expanded}
+            aria-label={expanded ? "Yopish" : "Ko'proq"}
+            onClick={(e) => { e.stopPropagation(); setExpanded((x) => !x); }}
+            style={{ fontSize: 13, color: "#7c8aa3", cursor: "pointer", width: 16, textAlign: "center" }}
+          >
+            {expanded ? "▾" : "▸"}
+          </span>
+        </div>
+      </div>
 
-        <button
-          type="button"
-          onClick={() => setExpanded((x) => !x)}
-          className="shrink-0 p-1 text-content-muted hover:text-content-primary"
-          aria-label={expanded ? "Yopish" : "Ko'proq"}
-          aria-expanded={expanded}
-        >
-          {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-        </button>
+      {/* Native label */}
+      <div className="font-mono" style={{ fontSize: 10.5, color: "#5b6679", margin: "6px 0 10px" }}>
+        {detection.native_label}
       </div>
 
       {/* Confidence bars */}
-      <div className="px-3 pb-2 space-y-2" onClick={(e) => e.stopPropagation()}>
-        <ConfidenceMeter value={detection.score}    label={DETECTION_SCORE}  size="sm" showNote />
-        {verdict && (
-          <ConfidenceMeter value={verdict.confidence} label={VERDICT_CONFIDENCE} size="sm" />
-        )}
+      <div className="flex flex-col" style={{ gap: 7, marginBottom: 9 }}>
+        <Bar label="Detektor" pct={detPct} color={color} />
+        <Bar label="VLM ishonchi" pct={vlmPct} color="#818cf8" />
       </div>
 
       {/* VLM rationale */}
       {verdict && (
-        <div className="px-3 pb-2 text-xs text-content-secondary leading-relaxed">
+        <div style={{ fontSize: 12, fontStyle: "italic", color: "#94a3b8", lineHeight: 1.5 }}>
           {verdict.rationale_uz}
         </div>
       )}
 
       {/* Expanded details */}
       {expanded && (
-        <div className="px-3 pb-3 space-y-2 text-xs border-t border-surface-border pt-2 mt-1"
-             onClick={(e) => e.stopPropagation()}>
-          <div className="grid grid-cols-2 gap-x-3 gap-y-1">
-            <span className="text-content-muted">{LOCATION_LABEL}</span>
-            <span className="text-content-secondary font-mono">
-              {detection.box.x},{detection.box.y}
-            </span>
-            <span className="text-content-muted">{SIZE_LABEL}</span>
-            <span className="text-content-secondary font-mono">
-              {detection.box.width}×{detection.box.height}
-            </span>
+        <div
+          onClick={(e) => e.stopPropagation()}
+          style={{
+            marginTop: 10, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8,
+            paddingTop: 10, borderTop: "1px solid rgba(255,255,255,0.08)",
+          }}
+        >
+          <div style={{ gridColumn: "1 / -1" }}>
+            <div style={{ fontSize: 10, textTransform: "uppercase", letterSpacing: "0.08em", color: "#6b7a93" }}>Piksel sohasi</div>
+            <div className="font-mono" style={{ fontSize: 11.5, color: "#aebbcf" }}>{pixel}</div>
           </div>
-
-          {Object.entries(detection.attributes).length > 0 && (
-            <div>
-              <p className="text-content-muted mb-1">{DETECTION_ATTRIBUTES}</p>
-              <div className="flex flex-wrap gap-1">
-                {Object.entries(detection.attributes).map(([k, v]) => (
-                  <span key={k} className="px-1.5 py-0.5 rounded bg-surface-border text-content-secondary">
-                    {k}: {v}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
+          <div>
+            <div style={{ fontSize: 10, textTransform: "uppercase", letterSpacing: "0.08em", color: "#6b7a93" }}>Material</div>
+            <div style={{ fontSize: 12, color: "#cbd5e1" }}>{material}</div>
+          </div>
+          <div>
+            <div style={{ fontSize: 10, textTransform: "uppercase", letterSpacing: "0.08em", color: "#6b7a93" }}>Zichlik</div>
+            <div className="font-mono" style={{ fontSize: 12, color: "#cbd5e1" }}>{density}</div>
+          </div>
         </div>
       )}
 
       {/* Judgement controls */}
-      <div className="px-3 pb-3 flex flex-wrap gap-1.5" onClick={(e) => e.stopPropagation()}>
-        <button
-          className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${
-            judgement === "confirmed"
-              ? "bg-green-700 text-white"
-              : "bg-surface-border text-content-secondary hover:bg-green-900/40 hover:text-green-300"
-          }`}
-          onClick={() => onJudge("confirmed")}
-        >
-          {JUDGE_CONFIRM}
-        </button>
-
-        <button
-          className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${
-            judgement === "rejected"
-              ? "bg-red-800 text-white"
-              : "bg-surface-border text-content-secondary hover:bg-red-900/40 hover:text-red-300"
-          }`}
-          onClick={() => onJudge("rejected")}
-        >
-          {JUDGE_REJECT}
-        </button>
-
-        <button
-          className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${
-            reclass || judgement === "reclassified"
-              ? "bg-amber-800 text-white"
-              : "bg-surface-border text-content-secondary hover:bg-amber-900/40 hover:text-amber-300"
-          }`}
-          onClick={() => setReclass((r) => !r)}
-        >
-          {JUDGE_RECLASSIFY}
-        </button>
+      <div className="flex" style={{ gap: 6, marginTop: 11 }} onClick={(e) => e.stopPropagation()}>
+        <div style={judgeBtn(judgement === "confirmed", "#22c55e")} onClick={() => onJudge("confirmed")}>{JUDGE_CONFIRM}</div>
+        <div style={judgeBtn(judgement === "rejected", "#ef4444")} onClick={() => onJudge("rejected")}>{JUDGE_REJECT}</div>
+        <div style={judgeBtn(reclass || judgement === "reclassified", "#f59e0b")} onClick={() => setReclass((r) => !r)}>Qayta</div>
       </div>
 
       {/* Reclassify picker */}
       {reclass && (
-        <div className="px-3 pb-3 flex gap-2 items-center" onClick={(e) => e.stopPropagation()}>
-          <label className="text-xs text-content-muted shrink-0">{MISSED_CATEGORY}</label>
-          <select
-            className="flex-1 bg-surface-card border border-surface-border rounded px-2 py-1 text-xs text-content-primary focus:outline-none focus:ring-1 focus:ring-amber-500"
-            value={newCat}
-            onChange={(e) => setNewCat(e.target.value as ThreatCategory)}
-          >
-            {CATEGORIES.map((c) => (
-              <option key={c} value={c}>{THREAT_CATEGORY[c]}</option>
-            ))}
-          </select>
-          <button
-            className="px-2 py-1 rounded text-xs font-semibold bg-amber-600 hover:bg-amber-500 text-white"
-            onClick={() => { onJudge("reclassified", newCat); setReclass(false); }}
-          >
-            OK
-          </button>
-        </div>
+        <select
+          value={newCat}
+          onClick={(e) => e.stopPropagation()}
+          onChange={(e) => { const c = e.target.value as ThreatCategory; setNewCat(c); onJudge("reclassified", c); }}
+          style={{
+            width: "100%", marginTop: 8, padding: "7px 9px", borderRadius: 8,
+            background: "rgba(0,0,0,0.3)", border: "1px solid rgba(245,158,11,0.4)", color: "#e2e8f0", fontSize: 12.5,
+          }}
+        >
+          {CATEGORIES.map((c) => <option key={c} value={c}>{THREAT_CATEGORY[c]}</option>)}
+        </select>
       )}
+    </div>
+  );
+}
+
+// Single labelled confidence bar.
+function Bar({ label, pct, color }: { label: string; pct: number | null; color: string }) {
+  return (
+    <div>
+      <div className="flex justify-between" style={{ fontSize: 10.5, color: "#7c8aa3", marginBottom: 3 }}>
+        <span>{label}</span>
+        <span className="font-mono" style={{ color: "#cbd5e1" }}>{pct === null ? "—" : `${pct}%`}</span>
+      </div>
+      <div style={{ height: 5, borderRadius: 999, background: "rgba(255,255,255,0.08)", overflow: "hidden" }}>
+        <div style={{ height: "100%", width: `${pct ?? 0}%`, background: color, borderRadius: 999 }} />
+      </div>
     </div>
   );
 }

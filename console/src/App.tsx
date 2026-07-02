@@ -1,24 +1,21 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { ScanLine, Bell, CheckCircle2, Loader2, Video, ImageUp } from "lucide-react";
+import { ScanLine, X } from "lucide-react";
 import type {
   AuthState, ScanRecord, DetectionJudgement, ThreatCategory,
   OperatorAnnotation, WsMessage,
 } from "./lib/types";
 import {
-  getScanAudit, markReviewing, loadToken, clearToken,
+  getScanAudit, loadToken, clearToken,
   AUTH_EXPIRED_EVENT, type AuditEntry,
 } from "./lib/api";
 import { IS_MOCK } from "./lib/mock";
 import { useScanQueue } from "./hooks/useScanQueue";
 import { useScan } from "./hooks/useScan";
-import {
-  WebSocketProvider, useWebSocket,
-} from "./hooks/useWebSocket";
+import { WebSocketProvider, useWebSocket } from "./hooks/useWebSocket";
 import { ScanQueue } from "./components/ScanQueue";
 import { VerdictPanel } from "./components/VerdictPanel";
 import { DecisionPanel } from "./components/DecisionPanel";
 import { AuditLog } from "./components/AuditLog";
-import { ScanStatus } from "./components/ScanStatus";
 import { LoginScreen } from "./components/LoginScreen";
 import { ConnectionStatus } from "./components/ConnectionStatus";
 import { HighRiskBanner, type HighRiskAlert } from "./components/HighRiskBanner";
@@ -27,8 +24,6 @@ import { ImageScreening } from "./components/ImageScreening";
 import {
   APP_TITLE, LANE_LABEL, OPERATOR_LABEL, LOADING, LOGOUT,
   AUDIT_TITLE, SCAN_LOAD_ERROR, RETRY,
-  MARK_REVIEWED, MARK_REVIEWED_DONE,
-  MODE_CAMERA, MODE_UPLOAD,
 } from "./lib/uz";
 
 // Dev/demo bypass — ONLY when explicitly enabled via VITE_AUTH_BYPASS (or mock
@@ -43,10 +38,9 @@ const BYPASS_AUTH: AuthState = {
   laneIds:    ["lane-1", "lane-2"],
 };
 
-// ------------------------------------------------------------------
 interface JudgementEntry {
-  judgement:  DetectionJudgement;
-  corrected:  ThreatCategory | null;
+  judgement: DetectionJudgement;
+  corrected: ThreatCategory | null;
 }
 
 // ==================================================================
@@ -58,23 +52,16 @@ export default function App() {
     return loadToken() ? { ...BYPASS_AUTH, token: loadToken()! } : null;
   });
 
-  // Session expiry (401) → drop auth and show login, WITHOUT a page reload loop.
   useEffect(() => {
     const onExpired = () => { if (!AUTH_BYPASS) setAuth(null); };
     window.addEventListener(AUTH_EXPIRED_EVENT, onExpired);
     return () => window.removeEventListener(AUTH_EXPIRED_EVENT, onExpired);
   }, []);
 
-  if (!auth) {
-    return <LoginScreen onLogin={setAuth} />;
-  }
+  if (!auth) return <LoginScreen onLogin={setAuth} />;
 
   const laneId = auth.laneIds[0] ?? null;
-
-  const handleLogout = () => {
-    clearToken();
-    if (!AUTH_BYPASS) setAuth(null);
-  };
+  const handleLogout = () => { clearToken(); if (!AUTH_BYPASS) setAuth(null); };
 
   return (
     <WebSocketProvider laneId={laneId}>
@@ -87,45 +74,35 @@ export default function App() {
 // Console: the operator workspace.
 // ==================================================================
 function Console({ auth, onLogout }: { auth: AuthState; onLogout: () => void }) {
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [judgements, setJudgements] = useState<Record<string, JudgementEntry>>({});
+  const [selectedId, setSelectedId]   = useState<string | null>(null);
+  const [judgements, setJudgements]   = useState<Record<string, JudgementEntry>>({});
   const [annotations, setAnnotations] = useState<OperatorAnnotation[]>([]);
-  const [showAudit, setShowAudit] = useState(false);
+  const [showAudit, setShowAudit]     = useState(false);
   const [auditEntries, setAuditEntries] = useState<AuditEntry[]>([]);
   const [auditChainValid, setAuditChainValid] = useState<boolean | null>(null);
-  const [highAlert, setHighAlert] = useState<HighRiskAlert | null>(null);
+  const [highAlert, setHighAlert]     = useState<HighRiskAlert | null>(null);
   const [soundEnabled, setSoundEnabled] = useState(true);
-  const [reviewing, setReviewing] = useState(false);
-  const [srAlert, setSrAlert] = useState("");
-  // Acquisition mode — operator switches between the live camera and uploading
-  // X-ray images for Qwen screening. Both feed the same decision workflow.
-  const [acqMode, setAcqMode] = useState<"camera" | "upload">("camera");
+  const [srAlert, setSrAlert]         = useState("");
+  const [acqMode, setAcqMode]         = useState<"camera" | "upload">("camera");
 
-  const mainRef = useRef<HTMLElement>(null);
+  const mainRef    = useRef<HTMLElement>(null);
   const srTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const laneId = auth.laneIds[0] ?? null;
 
-  // Queue + selected scan
   const { scans, loading: qLoading, error: qError, refresh, upsert } = useScanQueue(laneId);
   const { scan, setScan, loading: sLoading, error: sError, refresh: refreshScan } = useScan(selectedId);
 
-  // ----------------------------------------------------------------
-  // Select a scan → reset per-scan state and move focus to the main panel.
-  // ----------------------------------------------------------------
   const handleSelect = useCallback((id: string) => {
     setSelectedId(id);
     setJudgements({});
     setAnnotations([]);
     setShowAudit(false);
+    setAcqMode("camera");
   }, []);
 
-  // Move keyboard focus to the main panel once a scan is loaded.
-  useEffect(() => {
-    if (scan && !sLoading) mainRef.current?.focus();
-  }, [scan, sLoading]);
+  useEffect(() => { if (scan && !sLoading) mainRef.current?.focus(); }, [scan, sLoading]);
 
-  // Transient screen-reader announcement with cleaned-up timer.
   const announce = useCallback((text: string) => {
     setSrAlert(text);
     if (srTimerRef.current) clearTimeout(srTimerRef.current);
@@ -133,28 +110,20 @@ function Console({ auth, onLogout }: { auth: AuthState; onLogout: () => void }) 
   }, []);
   useEffect(() => () => { if (srTimerRef.current) clearTimeout(srTimerRef.current); }, []);
 
-  // ----------------------------------------------------------------
   // WebSocket — canonical dotted message types + risk_band.
-  // (Queue refresh on these events is handled inside useScanQueue.)
-  // ----------------------------------------------------------------
   useWebSocket((msg: WsMessage) => {
     if (msg.type === "scan.flagged" && msg.risk_band === "high") {
       setHighAlert({ scanId: msg.scan_id, riskBand: msg.risk_band, ts: msg.ts });
       announce("Diqqat: yuqori xavf darajasi aniqlandi");
     }
-    // If the open scan changes state, reload it.
     if (
-      "scan_id" in msg &&
-      msg.scan_id === selectedId &&
+      "scan_id" in msg && msg.scan_id === selectedId &&
       (msg.type === "scan.analyzed" || msg.type === "scan.flagged" || msg.type === "scan.decided")
     ) {
       refreshScan();
     }
   });
 
-  // ----------------------------------------------------------------
-  // Decision callback (from DecisionPanel — the single decision path)
-  // ----------------------------------------------------------------
   const handleDecided = useCallback((updated: ScanRecord) => {
     setScan(updated);
     upsert(updated);
@@ -163,29 +132,6 @@ function Console({ auth, onLogout }: { auth: AuthState; onLogout: () => void }) 
     announce("Qaror jurnalga yozildi");
   }, [setScan, upsert, announce]);
 
-  // ----------------------------------------------------------------
-  // Non-decision action: "mark as reviewed" (does NOT clear/seize — auditing
-  // and the real outcome stay solely with the DecisionPanel).
-  // ----------------------------------------------------------------
-  const handleMarkReviewed = useCallback(async () => {
-    if (!scan) return;
-    setReviewing(true);
-    try {
-      if (!IS_MOCK) await markReviewing(scan.scan_id);
-      const updated: ScanRecord = { ...scan, state: "reviewing" };
-      setScan(updated);
-      upsert(updated);
-      announce(MARK_REVIEWED_DONE);
-    } catch {
-      /* surfaced via queue/scan errors; non-blocking action */
-    } finally {
-      setReviewing(false);
-    }
-  }, [scan, setScan, upsert, announce]);
-
-  // ----------------------------------------------------------------
-  // Audit
-  // ----------------------------------------------------------------
   const toggleAudit = useCallback(async () => {
     if (!selectedId) return;
     if (showAudit) { setShowAudit(false); return; }
@@ -193,7 +139,7 @@ function Console({ auth, onLogout }: { auth: AuthState; onLogout: () => void }) 
       try {
         const entries = await getScanAudit(selectedId);
         setAuditEntries(entries);
-        setAuditChainValid(null);   // backend verifies; we just show
+        setAuditChainValid(null);
       } catch { setAuditEntries([]); }
     }
     setShowAudit(true);
@@ -204,41 +150,54 @@ function Console({ auth, onLogout }: { auth: AuthState; onLogout: () => void }) 
     setHighAlert(null);
   }, [handleSelect]);
 
-  // ----------------------------------------------------------------
+  const chromeBtn: React.CSSProperties = {
+    fontSize: 12.5, fontWeight: 600, color: "#aebbcf", padding: "6px 12px", borderRadius: 8,
+    cursor: "pointer", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.10)",
+  };
+
   return (
-    <div className="relative flex flex-col h-screen text-content-primary overflow-hidden">
-      {/* Subtle perspective grid sitting behind the whole console (depth) */}
-      <div className="pointer-events-none absolute inset-0 bg-grid-fine opacity-60" aria-hidden="true" />
+    <div className="relative flex flex-col h-screen" style={{ minWidth: 1320, color: "#e2e8f0" }}>
 
-      {/* ── Top bar ── */}
-      <header className="relative z-10 flex items-center gap-3 px-4 py-2.5 border-b border-white/10 glass-strong shrink-0">
-        <span className="grid place-items-center w-8 h-8 rounded-lg bg-blue-900/40 border border-blue-700/50 shadow-glow-blue" aria-hidden="true">
-          <ScanLine size={17} className="text-blue-300" />
-        </span>
-        <span className="text-sm font-bold tracking-tight">{APP_TITLE}</span>
-
-        {laneId && (
-          <span className="text-sm text-content-muted">
-            {LANE_LABEL}: <span className="font-medium text-content-secondary">{laneId}</span>
+      {/* ── Top chrome ── */}
+      <header
+        className="flex items-center justify-between shrink-0 border-b border-white/10 glass-strong"
+        style={{ padding: "11px 18px" }}
+      >
+        <div className="flex items-center" style={{ gap: 13 }}>
+          <span className="grid place-items-center shrink-0" style={{
+            width: 38, height: 38, borderRadius: 10, background: "linear-gradient(135deg,#14b8a6,#0d9488)",
+            boxShadow: "0 6px 16px rgba(20,184,166,0.35)",
+          }} aria-hidden="true">
+            <ScanLine size={20} color="#062a26" />
           </span>
-        )}
+          <div className="flex items-baseline" style={{ gap: 14 }}>
+            <span style={{ fontSize: 16, fontWeight: 700, letterSpacing: "-0.02em" }}>{APP_TITLE}</span>
+            {laneId && (
+              <span style={{ fontSize: 13, color: "#8595ad" }}>
+                {LANE_LABEL}: <span style={{ color: "#cbd5e1", fontWeight: 600 }}>{laneId}</span>
+              </span>
+            )}
+          </div>
+        </div>
 
-        <div className="ml-auto flex items-center gap-3">
+        <div className="flex items-center" style={{ gap: 14 }}>
           <ConnectionStatus />
-          <span className="text-sm text-content-muted">
-            {OPERATOR_LABEL}: <span className="font-medium text-content-secondary">{auth.username}</span>
+          <span style={{ fontSize: 13, color: "#8595ad" }}>
+            {OPERATOR_LABEL}: <span style={{ color: "#e2e8f0", fontWeight: 600 }}>{auth.username}</span>
           </span>
           <Clock />
-          <button
-            onClick={onLogout}
-            className="text-sm text-content-muted hover:text-content-primary transition-colors"
-          >
+          <button onClick={toggleAudit} disabled={!selectedId} aria-pressed={showAudit}
+            style={{ ...chromeBtn, opacity: selectedId ? 1 : 0.5, cursor: selectedId ? "pointer" : "not-allowed" }}>
+            {AUDIT_TITLE}
+          </button>
+          <button onClick={onLogout}
+            style={{ fontSize: 12.5, fontWeight: 600, color: "#fca5a5", padding: "6px 12px", borderRadius: 8, cursor: "pointer", background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.25)" }}>
             {LOGOUT}
           </button>
         </div>
       </header>
 
-      {/* ── Persistent high-risk banner (stays until operator acts) ── */}
+      {/* ── Persistent high-risk banner ── */}
       {highAlert && (
         <HighRiskBanner
           alert={highAlert}
@@ -250,10 +209,9 @@ function Console({ auth, onLogout }: { auth: AuthState; onLogout: () => void }) 
       )}
       <span className="sr-only" role="status" aria-live="assertive" aria-atomic="true">{srAlert}</span>
 
-      {/* ── Body: queue | main ── */}
-      <div className="relative z-10 flex flex-1 min-h-0 overflow-hidden">
+      {/* ── Body: queue | center | decision ── */}
+      <div className="flex flex-1 min-h-0 overflow-hidden">
 
-        {/* Left: Scan queue */}
         <ScanQueue
           scans={scans}
           loading={qLoading}
@@ -261,155 +219,78 @@ function Console({ auth, onLogout }: { auth: AuthState; onLogout: () => void }) 
           selectedId={selectedId}
           onSelect={handleSelect}
           onRefresh={refresh}
+          acqMode={acqMode}
+          onModeChange={setAcqMode}
         />
 
-        {/* Center + right */}
-        <main
-          ref={mainRef}
-          tabIndex={-1}
-          className="flex-1 flex flex-col min-w-0 overflow-y-auto focus:outline-none"
-        >
-          {/* Acquisition panel — camera ⇄ image upload, above the workspace */}
-          <div className="p-4 pb-0 flex flex-col gap-3">
-            <div role="tablist" aria-label="Tasvir manbasi" className="flex items-center gap-1.5 p-1 rounded-xl glass w-fit">
-              <button
-                role="tab"
-                aria-selected={acqMode === "camera"}
-                onClick={() => setAcqMode("camera")}
-                className={`press flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold border transition-all ${
-                  acqMode === "camera"
-                    ? "bg-teal-500/15 text-teal-200 border-teal-500/50 shadow-glow-teal"
-                    : "border-transparent text-content-secondary hover:bg-surface-hover"
-                }`}
-              >
-                <Video size={14} aria-hidden="true" />
-                {MODE_CAMERA}
-              </button>
-              <button
-                role="tab"
-                aria-selected={acqMode === "upload"}
-                onClick={() => setAcqMode("upload")}
-                className={`press flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold border transition-all ${
-                  acqMode === "upload"
-                    ? "bg-violet-500/15 text-violet-200 border-violet-500/50 shadow-glow-violet"
-                    : "border-transparent text-content-secondary hover:bg-surface-hover"
-                }`}
-              >
-                <ImageUp size={14} aria-hidden="true" />
-                {MODE_UPLOAD}
-              </button>
+        {/* Center */}
+        <main ref={mainRef} tabIndex={-1} className="flex-1 min-w-0 overflow-y-auto focus:outline-none" style={{ padding: "18px 20px" }}>
+          {acqMode === "upload" ? (
+            <ImageScreening />
+          ) : sLoading ? (
+            <div className="flex-1 flex flex-col items-center justify-center gap-4 text-content-muted" style={{ minHeight: 400 }}>
+              <span className="animate-spin" style={{ width: 40, height: 40, border: "3px solid rgba(148,163,184,0.25)", borderTopColor: "#94a3b8", borderRadius: 999 }} />
+              <span style={{ fontSize: 13, color: "#8595ad" }} role="status">{LOADING}</span>
             </div>
-            {acqMode === "camera" ? <LiveCamera /> : <ImageScreening />}
-          </div>
-
-          {!scan && !sLoading && !sError && <EmptyState />}
-
-          {sError && !sLoading && (
-            <div className="flex-1 flex flex-col items-center justify-center gap-3 text-content-muted">
-              <p className="text-sm text-red-400" role="alert">{SCAN_LOAD_ERROR}</p>
-              <button
-                onClick={refreshScan}
-                className="px-3 py-1.5 rounded text-sm font-medium border border-surface-border hover:bg-surface-hover"
-              >
-                {RETRY}
-              </button>
+          ) : sError ? (
+            <div className="flex flex-col items-center justify-center gap-3" style={{ minHeight: 400 }}>
+              <p style={{ fontSize: 13, color: "#fca5a5" }} role="alert">{SCAN_LOAD_ERROR}</p>
+              <button onClick={refreshScan} style={chromeBtn}>{RETRY}</button>
             </div>
-          )}
-
-          {sLoading && (
-            <div className="flex-1 flex flex-col items-center justify-center gap-4 text-content-muted p-4">
-              <div className="relative w-40 h-28 rounded-xl overflow-hidden surface-sunken section-verdict section-tint">
-                <div className="scan-sweep-line" aria-hidden="true" />
-                <div className="absolute inset-0 grid grid-rows-4 gap-1.5 p-2.5">
-                  <div className="skeleton" />
-                  <div className="skeleton w-3/4" />
-                  <div className="skeleton w-1/2" />
-                  <div className="skeleton w-5/6" />
-                </div>
-              </div>
-              <span className="text-sm tracking-wide animate-pulse" role="status">{LOADING}</span>
-            </div>
-          )}
-
-          {scan && !sLoading && (
-            <div className="flex-1 flex flex-col min-h-0 p-4 gap-4 animate-rise-in">
-              {/* Scan header */}
-              <div className="flex items-center gap-3 shrink-0 flex-wrap glass rounded-xl px-3 py-2">
-                <ScanStatus state={scan.state} risk={scan.overall_risk} />
-                <span className="text-sm text-content-muted font-mono">
-                  {new Date(scan.acquired_at).toLocaleString("uz-Latn-UZ")}
-                </span>
-                <div className="ml-auto flex items-center gap-2">
-                  {/* Non-decision action only — the real outcome lives in the
-                      DecisionPanel (single decision path, no conflicting buttons). */}
-                  {scan.state !== "decided" && scan.state !== "reviewing" && (
-                    <button
-                      onClick={handleMarkReviewed}
-                      disabled={reviewing}
-                      className="press flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-sm font-medium border border-white/10 glass text-content-secondary hover:bg-surface-hover disabled:opacity-50 transition-all"
-                    >
-                      {reviewing
-                        ? <Loader2 size={13} className="animate-spin" aria-hidden="true" />
-                        : <CheckCircle2 size={13} aria-hidden="true" />}
-                      {MARK_REVIEWED}
-                    </button>
-                  )}
-                  <button
-                    onClick={toggleAudit}
-                    aria-pressed={showAudit}
-                    className={`press flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-sm font-medium transition-all ${
-                      showAudit
-                        ? "bg-indigo-500/15 text-indigo-200 border border-indigo-500/50 shadow-glow-indigo"
-                        : "border border-white/10 glass text-content-secondary hover:bg-surface-hover"
-                    }`}
-                  >
-                    <Bell size={13} aria-hidden="true" />
-                    {AUDIT_TITLE}
-                  </button>
-                </div>
-              </div>
-
-              {/* Main split: viewer+verdict | decision */}
-              <div className="flex flex-1 gap-4 min-h-0 overflow-hidden">
-                <div className="flex-1 min-w-0 overflow-y-auto">
-                  <VerdictPanel
-                    scan={scan}
-                    judgements={judgements}
-                    annotations={annotations}
-                    onJudgementsChange={setJudgements}
-                    onAnnotationsChange={setAnnotations}
-                  />
-                </div>
-
-                <div className="w-80 shrink-0 flex flex-col gap-4 overflow-y-auto">
-                  <DecisionPanel
-                    scan={scan}
-                    operatorId={auth.operatorId}
-                    judgements={judgements}
-                    annotations={annotations}
-                    onDecided={handleDecided}
-                  />
-
-                  {showAudit && (
-                    <div className="section-decide animate-rise-in glass section-tint rounded-xl p-3">
-                      <AuditLog
-                        entries={IS_MOCK ? MOCK_AUDIT : auditEntries}
-                        chainValid={auditChainValid}
-                      />
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
+          ) : scan ? (
+            <div className="animate-rise-in"><VerdictPanel
+              scan={scan}
+              judgements={judgements}
+              annotations={annotations}
+              onJudgementsChange={setJudgements}
+              onAnnotationsChange={setAnnotations}
+            /></div>
+          ) : (
+            <LiveCamera />
           )}
         </main>
+
+        {/* Right: decision column (camera mode + a scan is open) */}
+        {acqMode === "camera" && scan && !sLoading && (
+          <aside className="shrink-0 overflow-y-auto border-l border-white/10" style={{ width: 320, background: "rgba(255,255,255,0.015)" }}>
+            <DecisionPanel
+              scan={scan}
+              operatorId={auth.operatorId}
+              judgements={judgements}
+              annotations={annotations}
+              onDecided={handleDecided}
+            />
+          </aside>
+        )}
       </div>
+
+      {/* ── Audit slide-over ── */}
+      {showAudit && selectedId && (
+        <div className="fixed inset-0 flex justify-end" style={{ zIndex: 60 }}>
+          <div onClick={toggleAudit} className="absolute inset-0" style={{ background: "rgba(0,0,0,0.5)", backdropFilter: "blur(2px)" }} />
+          <div className="relative h-full flex flex-col animate-slide-in-right"
+            style={{ width: 430, background: "#0b0e17", borderLeft: "1px solid rgba(255,255,255,0.1)", boxShadow: "-24px 0 64px rgba(0,0,0,0.55)" }}>
+            <div className="flex items-center justify-between shrink-0 border-b border-white/10" style={{ padding: "16px 18px" }}>
+              <div>
+                <div style={{ fontSize: 10.5, textTransform: "uppercase", letterSpacing: "0.14em", color: "#7c8aa3", fontWeight: 600 }}>Chain of custody</div>
+                <div style={{ fontSize: 16, fontWeight: 700, letterSpacing: "-0.02em" }}>{AUDIT_TITLE}</div>
+                <div className="font-mono" style={{ fontSize: 11, color: "#5b6679", marginTop: 2 }}>{selectedId}</div>
+              </div>
+              <button onClick={toggleAudit} aria-label="Yopish" className="grid place-items-center"
+                style={{ width: 32, height: 32, borderRadius: 9, cursor: "pointer", color: "#aebbcf", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.12)" }}>
+                <X size={16} />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto" style={{ padding: 18 }}>
+              <AuditLog entries={IS_MOCK ? MOCK_AUDIT : auditEntries} chainValid={auditChainValid} />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-// ------------------------------------------------------------------
-// Clock
 // ------------------------------------------------------------------
 function Clock() {
   const [time, setTime] = useState(() => fmtTime());
@@ -418,7 +299,7 @@ function Clock() {
     return () => clearInterval(id);
   }, []);
   return (
-    <span className="text-sm font-mono text-content-muted tabular-nums w-16 text-right">
+    <span className="font-mono tabular-nums" style={{ fontSize: 14, fontWeight: 500, color: "#cbd5e1", letterSpacing: "0.02em", padding: "4px 10px", borderRadius: 8, background: "rgba(0,0,0,0.25)" }}>
       {time}
     </span>
   );
@@ -428,52 +309,22 @@ function fmtTime() {
 }
 
 // ------------------------------------------------------------------
-// Empty state
-// ------------------------------------------------------------------
-function EmptyState() {
-  return (
-    <div className="flex-1 flex flex-col items-center justify-center gap-4 text-content-muted p-6">
-      <span className="relative grid place-items-center w-20 h-20 rounded-2xl glass section-verdict section-tint overflow-hidden">
-        <span className="scan-sweep-line" aria-hidden="true" />
-        <ScanLine size={36} className="text-sky-300/70" aria-hidden="true" />
-      </span>
-      <div className="text-center">
-        <p className="text-base font-semibold text-content-secondary">Skan tanlang</p>
-        <p className="text-sm text-content-muted mt-1">Chap paneldagi navbatdan tahlil uchun skanni oching.</p>
-      </div>
-    </div>
-  );
-}
-
-// ------------------------------------------------------------------
 // Mock audit entries for dev mode
 // ------------------------------------------------------------------
 const MOCK_AUDIT: AuditEntry[] = [
   {
-    event_id:    "evt-001",
-    seq:         1,
-    event_type:  "acquisition_recorded",
-    operator_id: null,
-    payload:     { scanner_id: "smiths-lane-1", modality: "dual_energy" },
-    created_at:  new Date(Date.now() - 5 * 60_000).toISOString(),
-    event_hmac:  "a".repeat(64),
+    event_id: "evt-001", seq: 1, event_type: "acquisition_recorded", operator_id: null,
+    payload: { scanner_id: "smiths-lane-1", modality: "dual_energy" },
+    created_at: new Date(Date.now() - 5 * 60_000).toISOString(), event_hmac: "a".repeat(64),
   },
   {
-    event_id:    "evt-002",
-    seq:         2,
-    event_type:  "detection_recorded",
-    operator_id: null,
-    payload:     { n_detections: 2, model: "YOLOv8-xray" },
-    created_at:  new Date(Date.now() - 3 * 60_000).toISOString(),
-    event_hmac:  "b".repeat(64),
+    event_id: "evt-002", seq: 2, event_type: "detection_recorded", operator_id: null,
+    payload: { n_detections: 2, model: "YOLOv8-xray" },
+    created_at: new Date(Date.now() - 3 * 60_000).toISOString(), event_hmac: "b".repeat(64),
   },
   {
-    event_id:    "evt-003",
-    seq:         3,
-    event_type:  "verdict_recorded",
-    operator_id: null,
-    payload:     { overall_risk: "high", model: "Qwen3-VL" },
-    created_at:  new Date(Date.now() - 1 * 60_000).toISOString(),
-    event_hmac:  "c".repeat(64),
+    event_id: "evt-003", seq: 3, event_type: "verdict_recorded", operator_id: null,
+    payload: { overall_risk: "high", model: "Qwen3-VL" },
+    created_at: new Date(Date.now() - 1 * 60_000).toISOString(), event_hmac: "c".repeat(64),
   },
 ];

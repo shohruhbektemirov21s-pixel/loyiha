@@ -1,80 +1,58 @@
-import { ShieldAlert, AlertTriangle, Info, CheckCircle2, X } from "lucide-react";
+import { ShieldAlert, AlertTriangle, Info, ShieldCheck, X } from "lucide-react";
 import type { RiskBand } from "../lib/types";
-import { RISK_BAND, CLEAR_DISCLAIMER, SR_CLOSE } from "../lib/uz";
+import { BAND, hexA } from "../lib/theme";
+import { RISK_BAND, SR_CLOSE } from "../lib/uz";
 
 interface Props {
   risk:       RiskBand;
-  summaryUz?: string;
+  sub?:       string;       // status line (e.g. "3 ta topilma aniqlandi")
+  summaryUz?: string;       // fallback when no explicit sub is given
   onDismiss?: () => void;
 }
 
-const CONFIG: Record<RiskBand, {
-  icon:  React.ReactNode;
-  outer: string;
-  inner: string;
-  title: string;
-}> = {
-  high: {
-    // Distinct shield icon — high is visually different from medium, not
-    // colour-only (color-blind safe). Pulsing red halo = most salient
-    // surface in the whole console (motion stops under reduced-motion).
-    icon:  <ShieldAlert size={20} aria-hidden="true" />,
-    outer: "border-risk-high-border bg-risk-high-bg halo-high",
-    inner: "text-risk-high-text",
-    title: RISK_BAND.high,
-  },
-  medium: {
-    icon:  <AlertTriangle size={20} aria-hidden="true" />,
-    outer: "border-risk-medium-border bg-risk-medium-bg shadow-glow-medium",
-    inner: "text-risk-medium-text",
-    title: RISK_BAND.medium,
-  },
-  low: {
-    icon:  <Info size={20} aria-hidden="true" />,
-    outer: "border-risk-low-border bg-risk-low-bg shadow-glow-low",
-    inner: "text-risk-low-text",
-    title: RISK_BAND.low,
-  },
-  clear: {
-    icon:  <CheckCircle2 size={20} aria-hidden="true" />,
-    outer: "border-risk-clear-border bg-risk-clear-bg shadow-elev-2",
-    inner: "text-risk-clear-text",
-    title: RISK_BAND.clear,
-  },
+// Distinct icon per band — never colour-only (color-blind safe).
+const ICON: Record<RiskBand, React.ReactNode> = {
+  high:   <ShieldAlert size={24} aria-hidden="true" />,
+  medium: <AlertTriangle size={24} aria-hidden="true" />,
+  low:    <Info size={24} aria-hidden="true" />,
+  clear:  <ShieldCheck size={24} aria-hidden="true" />,
 };
 
-export function AlertBanner({ risk, summaryUz, onDismiss }: Props) {
-  const cfg = CONFIG[risk];
+export function AlertBanner({ risk, sub, summaryUz, onDismiss }: Props) {
+  const { color } = BAND[risk];
+  const subText = sub ?? summaryUz;
+  const muted = risk === "clear";
 
   return (
     <div
       role="alert"
       aria-live="assertive"
-      className={`relative flex gap-3 items-start p-3 rounded-xl border bg-depth-card animate-rise-in ${cfg.outer}`}
+      className={`flex items-center ${risk === "high" ? "halo-high" : ""}`}
+      style={{
+        gap: 14, padding: "16px 20px", borderRadius: 14,
+        background: hexA(color, muted ? 0.08 : 0.12),
+        border: `1px solid ${hexA(color, 0.42)}`,
+        boxShadow: risk === "high" ? undefined : `0 8px 30px ${hexA(color, 0.12)}`,
+      }}
     >
-      <span className={`${cfg.inner} ${risk === "high" ? "animate-pulse" : ""}`}>{cfg.icon}</span>
+      <span
+        className="grid place-items-center shrink-0"
+        style={{ color, width: 42, height: 42, borderRadius: 11, background: hexA(color, 0.18) }}
+      >
+        {ICON[risk]}
+      </span>
 
       <div className="flex-1 min-w-0">
-        <p className={`text-sm font-semibold ${cfg.inner}`}>{cfg.title}</p>
-        {summaryUz && (
-          <p className="mt-1 text-sm text-content-secondary leading-relaxed">
-            {summaryUz}
-          </p>
-        )}
-        {risk === "clear" && (
-          <p className="mt-1 text-sm text-content-muted leading-relaxed italic">
-            {CLEAR_DISCLAIMER}
-          </p>
+        <div style={{ fontSize: 18, fontWeight: 700, letterSpacing: "-0.02em" }}>{RISK_BAND[risk]}</div>
+        {subText && (
+          <div style={{ fontSize: 13, color: "#cbd5e1", opacity: 0.9 }}>{subText}</div>
         )}
       </div>
 
       {onDismiss && (
-        <button
-          onClick={onDismiss}
-          className="shrink-0 p-0.5 rounded text-content-muted hover:text-content-primary transition-colors"
-          aria-label={SR_CLOSE}
-        >
-          <X size={14} />
+        <button onClick={onDismiss} className="shrink-0" aria-label={SR_CLOSE}
+          style={{ padding: 2, borderRadius: 6, color: "#aebbcf", background: "transparent", border: "none", cursor: "pointer" }}>
+          <X size={16} />
         </button>
       )}
     </div>

@@ -29,3 +29,11 @@ screening_report.json
 
 # OS
 .DS_Store
+
+# Logs & runtime scratch
+*.log
+_*.log
+_*.json
+_run_screen.py
+datalayer/_runtime/
+camera/captures/*.avi

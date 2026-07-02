@@ -1,19 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import {
-  ImageUp, Upload, Loader2, Trash2, X, FileWarning, AlertTriangle, Info,
-} from "lucide-react";
-import type { ScreenResult } from "../lib/types";
+import { ImageUp, Loader2, X, AlertTriangle } from "lucide-react";
+import type { ScreenResult, ScreenFlag } from "../lib/types";
 import { screenImages, ApiError } from "../lib/api";
-import { SCREEN_RISK_UI, SCREEN_FLAG_UI } from "./screeningUi";
 import {
-  SCREEN_TITLE, SCREEN_SUBTITLE, SCREEN_DROPZONE, SCREEN_DROPZONE_HINT,
-  SCREEN_PICK_FILES, SCREEN_ANALYZE, SCREEN_ANALYZING, SCREEN_ANALYZING_HINT,
-  SCREEN_CLEAR_ALL, SCREEN_REMOVE_FILE, SCREEN_SELECTED_COUNT, SCREEN_NO_FILES,
-  SCREEN_RESULTS_TITLE, SCREEN_WAGON_TYPE, SCREEN_MAIN_CARGO, SCREEN_RISK_LEVEL,
-  SCREEN_FLAGS_TITLE, SCREEN_SUMMARY_LABEL, SCREEN_SECONDS, SCREEN_RESULT_ERROR,
+  SCREEN_DROPZONE, SCREEN_DROPZONE_HINT, SCREEN_PICK_FILES,
+  SCREEN_ANALYZE, SCREEN_ANALYZING, SCREEN_ANALYZING_HINT,
+  SCREEN_CLEAR_ALL, SCREEN_REMOVE_FILE,
+  SCREEN_WAGON_TYPE, SCREEN_MAIN_CARGO,
+  SCREEN_SECONDS, SCREEN_RESULT_ERROR,
   SCREEN_ERROR, SCREEN_UNSUPPORTED, SCREEN_DISCLAIMER, SCREEN_FLAG_NAME,
-  SCREEN_FLAG_VALUE, RISK_BAND_SHORT,
+  SCREEN_FLAG_VALUE, RISK_BAND_SHORT, MODE_UPLOAD,
 } from "../lib/uz";
+import { bandColor, bandBg, FLAG_COLOR, hexA } from "../lib/theme";
 
 const ACCEPT = "image/jpeg,image/png";
 const ACCEPT_TYPES = new Set(["image/jpeg", "image/png"]);
@@ -115,154 +113,340 @@ export function ImageScreening() {
   return (
     <section
       aria-labelledby="screen-heading"
-      className="section-screen rounded-xl border border-white/10 glass section-tint overflow-hidden shadow-elev-3"
+      style={{ maxWidth: 1080, margin: "0 auto", width: "100%" }}
     >
-      {/* Header — violet "AI vision / upload" identity */}
-      <div className="flex items-center gap-2.5 px-3 py-2.5 border-b border-white/10">
-        <span className="grid place-items-center w-7 h-7 rounded-lg section-tile shrink-0" aria-hidden="true">
-          <ImageUp size={15} />
-        </span>
-        <div className="min-w-0 section-bar pl-3">
-          <p className="text-[10px] font-semibold uppercase section-eyebrow leading-none">Skrining</p>
-          <h2 id="screen-heading" className="text-sm font-bold text-content-primary leading-tight mt-0.5">
-            {SCREEN_TITLE}
+      {/* Header row */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "flex-start",
+          justifyContent: "space-between",
+          gap: 16,
+          marginBottom: 16,
+        }}
+      >
+        <div>
+          <p
+            style={{
+              fontSize: 11,
+              textTransform: "uppercase",
+              letterSpacing: "0.14em",
+              color: "#7c8aa3",
+              fontWeight: 600,
+              margin: 0,
+            }}
+          >
+            Skrining
+          </p>
+          <h2
+            id="screen-heading"
+            style={{
+              fontSize: 19,
+              fontWeight: 700,
+              letterSpacing: "-0.02em",
+              color: "#e6edf6",
+              margin: "4px 0 0",
+            }}
+          >
+            {MODE_UPLOAD}
           </h2>
-          <p className="text-xs text-content-muted truncate">{SCREEN_SUBTITLE}</p>
         </div>
 
-        {pending.length > 0 && (
-          <button
-            onClick={clearAll}
-            disabled={analyzing}
-            className="ml-auto flex items-center gap-1.5 px-2.5 py-1 rounded text-sm font-medium border border-surface-border text-content-secondary hover:bg-surface-hover disabled:opacity-50 transition-colors"
-          >
-            <Trash2 size={13} aria-hidden="true" />
-            {SCREEN_CLEAR_ALL}
-          </button>
-        )}
+        <button
+          onClick={() => inputRef.current?.click()}
+          disabled={analyzing}
+          style={{
+            fontSize: 13,
+            fontWeight: 600,
+            color: "#062a26",
+            padding: "9px 16px",
+            borderRadius: 9,
+            background: "linear-gradient(135deg,#2dd4bf,#14b8a6)",
+            border: "none",
+            cursor: analyzing ? "default" : "pointer",
+            opacity: analyzing ? 0.5 : 1,
+            whiteSpace: "nowrap",
+          }}
+        >
+          + Rasm qo'shish
+        </button>
       </div>
 
-      <div className="p-3 flex flex-col gap-3">
-        {/* Drop zone */}
-        <div
-          onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-          onDragLeave={() => setDragOver(false)}
-          onDrop={onDrop}
-          className={`rounded-xl border-2 border-dashed p-6 flex flex-col items-center justify-center gap-2 text-center transition-all surface-sunken ${
-            dragOver
-              ? "border-violet-500 bg-violet-500/10 shadow-glow-violet"
-              : "border-surface-border bg-surface/40 hover:border-violet-500/40"
-          }`}
-        >
-          <span className="grid place-items-center w-12 h-12 rounded-xl section-tile mb-1" aria-hidden="true">
-            <Upload size={22} />
-          </span>
-          <p className="text-sm font-semibold text-content-secondary">{SCREEN_DROPZONE}</p>
-          <p className="text-xs text-content-muted">{SCREEN_DROPZONE_HINT}</p>
-          <button
-            onClick={() => inputRef.current?.click()}
-            disabled={analyzing}
-            className="press mt-1 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold bg-gradient-to-b from-violet-500 to-violet-600 hover:from-violet-400 hover:to-violet-500 disabled:opacity-50 text-white shadow-elev-2 hover:shadow-glow-violet transition-all"
-          >
-            <ImageUp size={14} aria-hidden="true" />
-            {SCREEN_PICK_FILES}
-          </button>
-          <input
-            ref={inputRef}
-            type="file"
-            accept={ACCEPT}
-            multiple
-            className="sr-only"
-            onChange={onInputChange}
-            aria-label={SCREEN_PICK_FILES}
-          />
-        </div>
+      {/* Dropzone */}
+      <div
+        role="button"
+        tabIndex={0}
+        aria-label={SCREEN_PICK_FILES}
+        onClick={() => inputRef.current?.click()}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            inputRef.current?.click();
+          }
+        }}
+        onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={onDrop}
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 10,
+          padding: 34,
+          borderRadius: 14,
+          textAlign: "center",
+          border: `1.5px dashed ${dragOver ? "rgba(129,140,248,0.7)" : "rgba(255,255,255,0.16)"}`,
+          background: dragOver ? "rgba(99,102,241,0.10)" : "rgba(255,255,255,0.02)",
+          transition: "all .15s",
+          cursor: "pointer",
+        }}
+      >
+        <ImageUp size={30} stroke="#6b7a93" aria-hidden="true" />
+        <p style={{ fontSize: 14, color: "#aebbcf", fontWeight: 500, margin: 0 }}>
+          {SCREEN_DROPZONE}
+        </p>
+        <p style={{ fontSize: 12, color: "#5b6679", margin: 0 }}>
+          {SCREEN_DROPZONE_HINT}
+        </p>
+      </div>
 
-        {error && (
-          <p className="flex items-center gap-1.5 text-sm text-red-300 bg-red-900/30 rounded px-3 py-1.5" role="alert">
-            <AlertTriangle size={14} aria-hidden="true" />
-            {error}
-          </p>
-        )}
+      <input
+        ref={inputRef}
+        type="file"
+        accept={ACCEPT}
+        multiple
+        style={{ display: "none" }}
+        onChange={onInputChange}
+        aria-label={SCREEN_PICK_FILES}
+      />
 
-        {/* Selected thumbnails */}
-        <div>
-          <h3 className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider section-eyebrow mb-1.5">
-            <span className="w-1 h-3 rounded-full bg-accent-screen/70" aria-hidden="true" />
-            {SCREEN_SELECTED_COUNT}: {pending.length}
-          </h3>
-          {pending.length === 0 ? (
-            <p className="text-sm text-content-muted">{SCREEN_NO_FILES}</p>
-          ) : (
-            <ul className="flex flex-wrap gap-2 scene">
-              {pending.map((p) => (
-                <li
-                  key={p.id}
-                  className="tilt-soft relative w-24 rounded-lg border border-surface-border overflow-hidden bg-black/40 shadow-elev-2 group"
-                >
-                  <img
-                    src={p.preview}
-                    alt={p.file.name}
-                    className="w-24 h-20 object-cover"
-                  />
-                  <p className="px-1 py-0.5 text-[10px] text-content-muted truncate" title={p.file.name}>
-                    {p.file.name}
-                  </p>
-                  <button
-                    onClick={() => removeFile(p.id)}
-                    disabled={analyzing}
-                    aria-label={`${SCREEN_REMOVE_FILE}: ${p.file.name}`}
-                    className="absolute top-0.5 right-0.5 p-0.5 rounded bg-black/70 text-content-secondary hover:text-red-300 hover:bg-black disabled:opacity-50 transition-colors"
-                  >
-                    <X size={13} aria-hidden="true" />
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-
-        {/* Analyze action */}
-        <div className="flex items-center gap-3">
+      {/* Action row: analyze + clear */}
+      {pending.length > 0 && (
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 14, flexWrap: "wrap" }}>
           <button
             onClick={handleAnalyze}
-            disabled={pending.length === 0 || analyzing}
+            disabled={analyzing}
             aria-busy={analyzing}
-            className="press flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold bg-gradient-to-b from-violet-500 to-violet-600 hover:from-violet-400 hover:to-violet-500 disabled:opacity-50 text-white shadow-elev-2 hover:shadow-glow-violet transition-all"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 7,
+              fontSize: 13,
+              fontWeight: 600,
+              color: "#062a26",
+              padding: "9px 16px",
+              borderRadius: 9,
+              background: "linear-gradient(135deg,#2dd4bf,#14b8a6)",
+              border: "none",
+              cursor: analyzing ? "default" : "pointer",
+              opacity: analyzing ? 0.7 : 1,
+            }}
           >
             {analyzing
               ? <Loader2 size={14} className="animate-spin" aria-hidden="true" />
               : <ImageUp size={14} aria-hidden="true" />}
             {analyzing ? SCREEN_ANALYZING : SCREEN_ANALYZE}
           </button>
+
+          <button
+            onClick={clearAll}
+            disabled={analyzing}
+            style={{
+              fontSize: 13,
+              fontWeight: 500,
+              color: "#94a3b8",
+              padding: "9px 14px",
+              borderRadius: 9,
+              background: "rgba(255,255,255,0.04)",
+              border: "1px solid rgba(255,255,255,0.12)",
+              cursor: analyzing ? "default" : "pointer",
+              opacity: analyzing ? 0.5 : 1,
+            }}
+          >
+            {SCREEN_CLEAR_ALL}
+          </button>
+
           {analyzing && (
-            <span className="text-sm text-content-muted animate-pulse" role="status">
+            <span
+              role="status"
+              className="animate-pulse"
+              style={{ fontSize: 12.5, color: "#5b6679" }}
+            >
               {SCREEN_ANALYZING_HINT}
             </span>
           )}
+
+          <span style={{ marginLeft: "auto", fontSize: 12, color: "#5b6679", fontFamily: "ui-monospace, monospace" }}>
+            {pending.length} ta rasm
+          </span>
         </div>
+      )}
 
-        {/* Decision-support disclaimer */}
-        <p className="flex items-start gap-1.5 text-xs text-content-muted bg-surface/60 border border-surface-border rounded px-3 py-2">
-          <Info size={13} className="mt-0.5 shrink-0" aria-hidden="true" />
-          {SCREEN_DISCLAIMER}
+      {/* Pending uploads preview — operator yuklagan rasmlar tahlildan OLDIN
+          shu yerda ko'rinadi (bir nechta rasm qo'llab-quvvatlanadi). Natija
+          kelgach (results) bu grid o'rnini ResultCard'lar egallaydi. */}
+      {pending.length > 0 && results.length === 0 && (
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))",
+            gap: 12,
+            marginTop: 16,
+          }}
+        >
+          {pending.map((p) => (
+            <div
+              key={p.id}
+              style={{
+                position: "relative",
+                borderRadius: 12,
+                overflow: "hidden",
+                border: "1px solid rgba(255,255,255,0.09)",
+                background: "rgba(255,255,255,0.03)",
+              }}
+            >
+              <div style={{ position: "relative", height: 110, background: "#0b0e16" }}>
+                <img
+                  src={p.preview}
+                  alt={p.file.name}
+                  style={{
+                    width: "100%",
+                    height: "100%",
+                    objectFit: "cover",
+                    opacity: analyzing ? 0.45 : 1,
+                    transition: "opacity .15s",
+                  }}
+                />
+                {analyzing && (
+                  <div
+                    style={{
+                      position: "absolute",
+                      inset: 0,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    <Loader2 size={20} className="animate-spin" stroke="#2dd4bf" aria-hidden="true" />
+                  </div>
+                )}
+                {!analyzing && (
+                  <button
+                    onClick={() => removeFile(p.id)}
+                    aria-label={`${SCREEN_REMOVE_FILE}: ${p.file.name}`}
+                    style={{
+                      position: "absolute",
+                      top: 6,
+                      right: 6,
+                      width: 24,
+                      height: 24,
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      borderRadius: 6,
+                      color: "#cbd5e1",
+                      background: "rgba(0,0,0,0.5)",
+                      border: "1px solid rgba(255,255,255,0.15)",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <X size={12} aria-hidden="true" />
+                  </button>
+                )}
+              </div>
+              <div style={{ padding: "7px 9px" }}>
+                <div
+                  title={p.file.name}
+                  style={{
+                    fontFamily: "ui-monospace, monospace",
+                    fontSize: 11,
+                    color: "#cbd5e1",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {p.file.name}
+                </div>
+                <div style={{ fontSize: 10, color: "#5b6679", marginTop: 2 }}>
+                  {(p.file.size / 1024).toFixed(0)} KB
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Batch error banner */}
+      {error && (
+        <p
+          role="alert"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            marginTop: 14,
+            fontSize: 13,
+            color: "#fca5a5",
+            background: "rgba(239,68,68,0.10)",
+            border: "1px solid rgba(239,68,68,0.30)",
+            borderRadius: 10,
+            padding: "9px 13px",
+          }}
+        >
+          <AlertTriangle size={15} aria-hidden="true" />
+          {error}
         </p>
+      )}
 
-        {/* Results */}
-        {results.length > 0 && (
-          <div>
-            <h3 className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider section-eyebrow mb-1.5">
-              <span className="w-1 h-3 rounded-full bg-accent-screen/70" aria-hidden="true" />
-              {SCREEN_RESULTS_TITLE}
-            </h3>
-            <ul className="flex flex-col gap-3 scene">
-              {results.map((r, i) => (
-                <ResultCard key={`${r.filename}-${i}`} result={r} preview={previewFor(r.filename)} />
-              ))}
-            </ul>
-          </div>
-        )}
-      </div>
+      {/* Results grid */}
+      {results.length > 0 && (
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fill, minmax(330px, 1fr))",
+            gap: 14,
+            marginTop: 16,
+          }}
+        >
+          {results.map((r, i) => (
+            <ResultCard
+              key={`${r.filename}-${i}`}
+              result={r}
+              preview={previewFor(r.filename)}
+              onRemove={() => {
+                const target = pending.find((p) => p.file.name === r.filename);
+                if (target) removeFile(target.id);
+              }}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* Footer disclaimer note */}
+      <p
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 7,
+          marginTop: 14,
+          fontSize: 11.5,
+          color: "#5b6679",
+        }}
+      >
+        <span
+          aria-hidden="true"
+          style={{
+            width: 7,
+            height: 7,
+            borderRadius: 999,
+            background: "#64748b",
+            flexShrink: 0,
+          }}
+        />
+        {SCREEN_DISCLAIMER}
+      </p>
     </section>
   );
 }
@@ -270,8 +454,16 @@ export function ImageScreening() {
 // ---------------------------------------------------------------------------
 // One result card per analysed image.
 // ---------------------------------------------------------------------------
-function ResultCard({ result, preview }: { result: ScreenResult; preview?: string }) {
-  const risk = SCREEN_RISK_UI[result.risk_band];
+function ResultCard({
+  result,
+  preview,
+  onRemove,
+}: {
+  result: ScreenResult;
+  preview?: string;
+  onRemove: () => void;
+}) {
+  const band = bandColor(result.risk_band);
   const flagEntries = [
     ["narcotics", result.flags.narcotics],
     ["weapon",    result.flags.weapon],
@@ -279,97 +471,208 @@ function ResultCard({ result, preview }: { result: ScreenResult; preview?: strin
     ["other",     result.flags.other],
   ] as const;
 
-  // High-risk results read as the most "raised"/salient card (red halo).
-  const isHigh = result.risk_band === "high";
+  const mono = "ui-monospace, SFMono-Regular, Menlo, monospace";
 
   return (
-    <li className={`section-screen card-3d rounded-xl border border-white/10 glass overflow-hidden animate-rise-in shadow-elev-2 ${
-      isHigh ? "halo-high" : "section-tint"
-    }`}>
-      <div className="flex flex-col sm:flex-row">
-        {/* Thumbnail */}
-        <div className="sm:w-40 shrink-0 bg-black/50 flex items-center justify-center surface-sunken">
-          {preview ? (
-            <img src={preview} alt={result.filename} className="w-full h-40 sm:h-full object-contain" />
-          ) : (
-            <div className="w-full h-40 flex items-center justify-center text-content-muted">
-              <ImageUp size={28} className="opacity-30" aria-hidden="true" />
-            </div>
-          )}
-        </div>
+    <div
+      style={{
+        background: "rgba(255,255,255,0.04)",
+        border: "1px solid rgba(255,255,255,0.09)",
+        borderRadius: 14,
+        overflow: "hidden",
+      }}
+    >
+      {/* Thumb area */}
+      <div
+        style={{
+          position: "relative",
+          height: 120,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          background:
+            "repeating-linear-gradient(135deg,rgba(255,255,255,0.04) 0 10px,rgba(255,255,255,0.015) 10px 20px), radial-gradient(circle at 50% 40%,rgba(255,255,255,0.06),transparent)",
+        }}
+      >
+        {preview ? (
+          <img
+            src={preview}
+            alt={result.filename}
+            style={{ width: "100%", height: "100%", objectFit: "cover" }}
+          />
+        ) : (
+          <span style={{ fontFamily: mono, fontSize: 11, color: "#5b6679" }}>
+            RENTGEN TASVIRI
+          </span>
+        )}
 
-        {/* Body */}
-        <div className="flex-1 min-w-0 p-3 flex flex-col gap-2">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-sm font-mono text-content-secondary truncate" title={result.filename}>
-              {result.filename}
-            </span>
-            {/* Risk badge: icon + text + colour (never colour alone) */}
-            <span
-              className={`ml-auto inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-semibold border ${risk.cls}`}
-            >
-              {risk.icon}
-              {SCREEN_RISK_LEVEL}: {RISK_BAND_SHORT[result.risk_band]}
-            </span>
-          </div>
-
-          {/* ok=false → surface the error openly; do NOT render as a quiet "clear" */}
-          {!result.ok && (
-            <p className="flex items-center gap-1.5 text-sm text-red-300 bg-red-900/30 rounded px-2 py-1.5" role="alert">
-              <FileWarning size={14} aria-hidden="true" />
-              {result.error ?? SCREEN_RESULT_ERROR}
-            </p>
-          )}
-
-          {result.ok && (
-            <>
-              <dl className="grid grid-cols-[auto,1fr] gap-x-3 gap-y-1 text-sm">
-                <dt className="text-content-muted">{SCREEN_WAGON_TYPE}</dt>
-                <dd className="text-content-primary">{result.wagon_type || "—"}</dd>
-                <dt className="text-content-muted">{SCREEN_MAIN_CARGO}</dt>
-                <dd className="text-content-primary">{result.main_cargo || "—"}</dd>
-              </dl>
-
-              {/* Flags */}
-              <div>
-                <h4 className="text-xs font-semibold text-content-muted uppercase tracking-wide mb-1">
-                  {SCREEN_FLAGS_TITLE}
-                </h4>
-                <div className="flex flex-wrap gap-1.5">
-                  {flagEntries.map(([key, value]) => {
-                    const ui = SCREEN_FLAG_UI[value];
-                    return (
-                      <span
-                        key={key}
-                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium border ${ui.cls}`}
-                      >
-                        {ui.icon}
-                        {SCREEN_FLAG_NAME[key]}: {SCREEN_FLAG_VALUE[value]}
-                      </span>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Qwen summary */}
-              {result.summary_uz && (
-                <div>
-                  <h4 className="text-xs font-semibold text-content-muted uppercase tracking-wide mb-1">
-                    {SCREEN_SUMMARY_LABEL}
-                  </h4>
-                  <p className="text-sm text-content-secondary leading-snug whitespace-pre-line">
-                    {result.summary_uz}
-                  </p>
-                </div>
-              )}
-            </>
-          )}
-
-          <p className="mt-auto text-xs text-content-muted font-mono">
-            {SCREEN_SECONDS}: {result.seconds.toFixed(1)}s
-          </p>
-        </div>
+        <button
+          onClick={onRemove}
+          aria-label={`${SCREEN_REMOVE_FILE}: ${result.filename}`}
+          style={{
+            position: "absolute",
+            top: 8,
+            right: 8,
+            width: 26,
+            height: 26,
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            borderRadius: 7,
+            color: "#cbd5e1",
+            background: "rgba(0,0,0,0.4)",
+            border: "1px solid rgba(255,255,255,0.15)",
+            cursor: "pointer",
+          }}
+        >
+          <X size={13} aria-hidden="true" />
+        </button>
       </div>
-    </li>
+
+      {/* Body */}
+      <div style={{ padding: "13px 14px" }}>
+        {/* Top row: filename + risk band pill */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 10,
+            marginBottom: 11,
+          }}
+        >
+          <span
+            title={result.filename}
+            style={{
+              fontFamily: mono,
+              fontSize: 12.5,
+              color: "#cbd5e1",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {result.filename}
+          </span>
+          <span
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              flexShrink: 0,
+              fontSize: 12,
+              fontWeight: 600,
+              padding: "4px 11px",
+              borderRadius: 999,
+              color: band,
+              background: bandBg(result.risk_band),
+              border: `1px solid ${hexA(band, 0.4)}`,
+            }}
+          >
+            {RISK_BAND_SHORT[result.risk_band]}
+          </span>
+        </div>
+
+        {/* Per-image error */}
+        {result.error && (
+          <p
+            role="alert"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 7,
+              fontSize: 12.5,
+              color: "#fca5a5",
+              background: "rgba(239,68,68,0.10)",
+              border: "1px solid rgba(239,68,68,0.28)",
+              borderRadius: 9,
+              padding: "8px 10px",
+              marginBottom: 11,
+            }}
+          >
+            <AlertTriangle size={13} aria-hidden="true" />
+            {result.error ?? SCREEN_RESULT_ERROR}
+          </p>
+        )}
+
+        {/* Two columns: wagon type / main cargo */}
+        <div
+          style={{
+            display: "flex",
+            gap: 16,
+            marginBottom: 11,
+            fontSize: 12,
+          }}
+        >
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 10.5, textTransform: "uppercase", color: "#6b7a93" }}>
+              {SCREEN_WAGON_TYPE}
+            </div>
+            <div style={{ color: "#cbd5e1" }}>{result.wagon_type || "—"}</div>
+          </div>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 10.5, textTransform: "uppercase", color: "#6b7a93" }}>
+              {SCREEN_MAIN_CARGO}
+            </div>
+            <div style={{ color: "#cbd5e1" }}>{result.main_cargo || "—"}</div>
+          </div>
+        </div>
+
+        {/* Flags grid */}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr",
+            gap: 7,
+            marginBottom: 8,
+          }}
+        >
+          {flagEntries.map(([key, value]) => {
+            const fc = FLAG_COLOR[value as ScreenFlag];
+            return (
+              <div
+                key={key}
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 3,
+                  padding: "8px 10px",
+                  borderRadius: 9,
+                  background: hexA(fc, 0.10),
+                  border: `1px solid ${hexA(fc, 0.32)}`,
+                }}
+              >
+                <span style={{ fontSize: 10, textTransform: "uppercase", color: "#7c8aa3" }}>
+                  {SCREEN_FLAG_NAME[key]}
+                </span>
+                <span style={{ fontFamily: mono, fontSize: 13, fontWeight: 600, color: fc }}>
+                  {SCREEN_FLAG_VALUE[value as ScreenFlag]}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Summary */}
+        {result.summary_uz && (
+          <p
+            style={{
+              fontSize: 12.5,
+              color: "#94a3b8",
+              lineHeight: 1.5,
+              marginBottom: 8,
+              whiteSpace: "pre-line",
+            }}
+          >
+            {result.summary_uz}
+          </p>
+        )}
+
+        {/* Inference time */}
+        <p style={{ fontFamily: mono, fontSize: 11, color: "#5b6679", margin: 0 }}>
+          {SCREEN_SECONDS}: {Math.round(result.seconds * 1000)} ms
+        </p>
+      </div>
+    </div>
   );
 }

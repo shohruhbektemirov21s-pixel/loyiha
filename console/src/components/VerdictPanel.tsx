@@ -6,131 +6,122 @@ import type {
 import { AlertBanner } from "./AlertBanner";
 import { DetectionCard } from "./DetectionCard";
 import { XRayViewer } from "./XRayViewer";
+import { catColor } from "../lib/theme";
 import {
-  DETECTIONS_TITLE, NO_DETECTIONS,
-  VERDICT_TITLE, VERDICT_SUMMARY_LABEL, VERDICT_ADVISORY_NOTE,
-  VERDICT_PENDING, VERDICT_UNAVAILABLE,
-  MISSED_TITLE, MISSED_ADD, MISSED_DELETE,
+  DETECTIONS_TITLE,
+  VERDICT_TITLE, VERDICT_ADVISORY_NOTE, VERDICT_UNAVAILABLE,
+  MISSED_TITLE, MISSED_DELETE,
   THREAT_CATEGORY, IMAGE_MODALITY, SCAN_SUBJECT,
 } from "../lib/uz";
 
-// Category danger ranking — most dangerous first when sorting detections.
+// Most dangerous detections first: by category severity, then detector score.
 const CATEGORY_SEVERITY: Record<ThreatCategory, number> = {
-  explosive:        100,
-  firearm:           90,
-  bladed_weapon:     80,
-  narcotics:         70,
-  contraband_other:  50,
-  currency:          40,
-  metallic_anomaly:  30,
-  organic_anomaly:   20,
-  unknown:           10,
+  explosive: 100, firearm: 90, bladed_weapon: 80, narcotics: 70,
+  contraband_other: 50, currency: 40, metallic_anomaly: 30, organic_anomaly: 20, unknown: 10,
 };
 
-// ------------------------------------------------------------------
-// Per-detection local judgement state
-// ------------------------------------------------------------------
 interface JudgementEntry {
-  judgement:  DetectionJudgement;
-  corrected:  ThreatCategory | null;
+  judgement: DetectionJudgement;
+  corrected: ThreatCategory | null;
 }
 
 interface Props {
-  scan:               ScanRecord;
-  onJudgementsChange: (j: Record<string, JudgementEntry>) => void;
-  onAnnotationsChange:(a: OperatorAnnotation[]) => void;
-  judgements:         Record<string, JudgementEntry>;
-  annotations:        OperatorAnnotation[];
+  scan:                ScanRecord;
+  onJudgementsChange:  (j: Record<string, JudgementEntry>) => void;
+  onAnnotationsChange: (a: OperatorAnnotation[]) => void;
+  judgements:          Record<string, JudgementEntry>;
+  annotations:         OperatorAnnotation[];
 }
+
+// Panel wrapper — the translucent card used across the analysis column.
+function Card({ children }: { children: React.ReactNode }) {
+  return (
+    <div style={{ background: "rgba(255,255,255,0.025)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 14, padding: 13 }}>
+      {children}
+    </div>
+  );
+}
+
+const META_LABEL: React.CSSProperties = { fontSize: 10, textTransform: "uppercase", letterSpacing: "0.1em", color: "#6b7a93" };
+const META_VALUE: React.CSSProperties = { fontSize: 13, color: "#cbd5e1", fontWeight: 500 };
 
 export function VerdictPanel({
   scan, onJudgementsChange, onAnnotationsChange, judgements, annotations,
 }: Props) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [frameIdx,   setFrameIdx]   = useState(0);
+  const [frameIdx, setFrameIdx]     = useState(0);
 
   const det    = scan.detection;
   const verd   = scan.verdict;
   const frames = det?.frames ?? [];
   const frame  = frames[frameIdx] ?? null;
-  const analyzing = scan.state === "analyzing";
 
-  // Show the most dangerous detections first: by category severity, then by
-  // detector score. (The raw AI order is not risk-prioritised.)
+  // Lifecycle flags
+  const isAnalyzing = scan.state === "analyzing" || scan.state === "pending";
+  const isFailed    = det?.status === "failed" || scan.state === "error";
+  const isNoFind    = det?.status === "completed_no_findings";
+
   const detections: Detection[] = [...(det?.detections ?? [])].sort((a, b) => {
     const sevDiff = CATEGORY_SEVERITY[b.category] - CATEGORY_SEVERITY[a.category];
-    if (sevDiff !== 0) return sevDiff;
-    return b.score - a.score;
+    return sevDiff !== 0 ? sevDiff : b.score - a.score;
   });
+  const isPresent = detections.length > 0 && !isFailed && !isAnalyzing;
 
-  // Map detections → verdict rationale
-  const verdictMap = Object.fromEntries(
-    (verd?.per_detection ?? []).map((dv) => [dv.detection_id, dv]),
-  );
+  const verdictMap = Object.fromEntries((verd?.per_detection ?? []).map((dv) => [dv.detection_id, dv]));
 
-  const handleJudge = (
-    detId: string,
-    j: DetectionJudgement,
-    corrected?: ThreatCategory,
-  ) => {
-    onJudgementsChange({
-      ...judgements,
-      [detId]: { judgement: j, corrected: corrected ?? null },
-    });
+  const handleJudge = (detId: string, j: DetectionJudgement, corrected?: ThreatCategory) => {
+    onJudgementsChange({ ...judgements, [detId]: { judgement: j, corrected: corrected ?? null } });
   };
-
-  const handleAddAnnotation = (
-    a: Omit<OperatorAnnotation, "note_uz"> & { note_uz: string | null },
-  ) => {
+  const handleAddAnnotation = (a: Omit<OperatorAnnotation, "note_uz"> & { note_uz: string | null }) => {
     onAnnotationsChange([...annotations, a as OperatorAnnotation]);
   };
+  const removeAnnotation = (idx: number) => onAnnotationsChange(annotations.filter((_, i) => i !== idx));
 
-  const removeAnnotation = (idx: number) => {
-    onAnnotationsChange(annotations.filter((_, i) => i !== idx));
-  };
+  const risk = scan.overall_risk ?? "clear";
+  const count = detections.length;
+  const bannerSub =
+    isAnalyzing ? "Detektor ishlamoqda — natija kutilmoqda"
+    : isFailed ? "Model tasdiqlangan javob qaytarmadi"
+    : isNoFind ? "Shubhali buyum topilmadi — bu ozod etish emas"
+    : `${count} ta topilma aniqlandi${risk === "high" ? " · jismoniy ko'rik tavsiya etiladi" : ""}`;
 
   return (
-    <div className="section-verdict flex flex-col h-full gap-4 overflow-hidden">
+    <div className="flex flex-col" style={{ gap: 14 }}>
 
-      {/* ── Risk banner ── */}
-      {scan.overall_risk && (
-        <AlertBanner
-          risk={scan.overall_risk}
-          summaryUz={verd?.summary_uz}
-        />
-      )}
+      {/* Risk banner */}
+      <AlertBanner risk={risk} sub={bannerSub} />
 
-      {/* ── Metadata strip ── */}
-      <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-content-muted">
-        <span>{SCAN_SUBJECT[scan.subject]}</span>
-        <span>{IMAGE_MODALITY[scan.modality]}</span>
-        {scan.lane_id && <span>{scan.lane_id}</span>}
-        <span className="font-mono truncate max-w-[160px]" title={scan.scan_id}>
-          {scan.scan_id.slice(0, 8)}…
-        </span>
+      {/* Metadata strip */}
+      <div className="flex flex-wrap" style={{ gap: 26, padding: "0 4px" }}>
+        <div><div style={META_LABEL}>Subyekt</div><div style={META_VALUE}>{SCAN_SUBJECT[scan.subject]}</div></div>
+        <div><div style={META_LABEL}>Modallik</div><div style={META_VALUE}>{IMAGE_MODALITY[scan.modality]}</div></div>
+        {scan.lane_id && <div><div style={META_LABEL}>Yo'lak</div><div style={META_VALUE}>{scan.lane_id}</div></div>}
+        <div><div style={META_LABEL}>Skan ID</div><div className="font-mono" style={{ fontSize: 13, color: "#94a3b8" }} title={scan.scan_id}>{scan.scan_id.slice(0, 12)}…</div></div>
       </div>
 
-      {/* ── Two-column: viewer + right panel ── */}
-      <div className="flex gap-4 flex-1 min-h-0 overflow-hidden">
+      {/* Two sub-columns: viewer + analysis */}
+      <div className="flex items-start" style={{ gap: 14 }}>
 
-        {/* Left: viewer */}
-        <div className="flex-1 min-w-0 flex flex-col min-h-0">
-          {/* Frame tabs */}
-          {frames.length > 1 && (
-            <div className="flex gap-1 mb-2">
-              {frames.map((f, i) => (
-                <button
-                  key={f.frame_id}
-                  onClick={() => setFrameIdx(i)}
-                  className={`press px-2.5 py-1 rounded-lg text-xs font-medium transition-all ${
-                    i === frameIdx
-                      ? "bg-sky-500/20 text-sky-200 border border-sky-500/50 shadow-glow-low"
-                      : "glass text-content-secondary hover:bg-surface-hover"
-                  }`}
-                >
-                  {f.view_label ?? `Kadr ${i + 1}`}
-                </button>
-              ))}
+        {/* Viewer */}
+        <div className="flex-1 min-w-0 flex flex-col" style={{ gap: 10 }}>
+          {frames.length > 0 && (
+            <div className="flex" style={{ gap: 6 }}>
+              {frames.map((f, i) => {
+                const active = i === frameIdx;
+                return (
+                  <div key={f.frame_id} onClick={() => setFrameIdx(i)}
+                    className="flex flex-col cursor-pointer"
+                    style={{
+                      gap: 1, padding: "6px 12px", borderRadius: 8, fontSize: 12,
+                      border: `1px solid ${active ? "rgba(255,255,255,0.2)" : "rgba(255,255,255,0.07)"}`,
+                      background: active ? "rgba(255,255,255,0.09)" : "rgba(255,255,255,0.02)",
+                      color: active ? "#e2e8f0" : "#8595ad",
+                    }}>
+                    <span style={{ fontWeight: 600 }}>Kadr {i + 1}</span>
+                    <span className="font-mono" style={{ fontSize: 10, opacity: 0.7 }}>{f.view_label ?? "high_energy"}</span>
+                  </div>
+                );
+              })}
             </div>
           )}
 
@@ -140,121 +131,140 @@ export function VerdictPanel({
             detections={detections.filter((d) => d.frame_id === frame?.frame_id)}
             selectedId={selectedId}
             onSelect={setSelectedId}
-            analyzing={analyzing}
+            analyzing={isAnalyzing}
             onAddAnnotation={handleAddAnnotation}
           />
         </div>
 
-        {/* Right: detections + verdict */}
-        <div className="w-72 shrink-0 flex flex-col gap-3 overflow-y-auto pr-0.5">
+        {/* Analysis column */}
+        <div className="shrink-0 flex flex-col" style={{ width: 300, gap: 12 }}>
 
-          {/* ── Detections ── */}
-          <section aria-labelledby="det-heading">
-            <h3 id="det-heading" className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider section-eyebrow mb-2">
-              <span className="w-1 h-3 rounded-full bg-[var(--sec-accent)] opacity-80" aria-hidden="true" />
-              {DETECTIONS_TITLE}
-              {detections.length > 0 && (
-                <span className="ml-0.5 px-1.5 py-px rounded-full bg-white/5 text-content-muted font-semibold normal-case tracking-normal">
-                  {detections.length}
-                </span>
+          {/* Detected items */}
+          <Card>
+            <div className="flex items-center justify-between" style={{ marginBottom: 11 }}>
+              <span style={{ fontSize: 13, fontWeight: 700, letterSpacing: "-0.01em" }}>{DETECTIONS_TITLE}</span>
+              {isPresent && (
+                <span style={{ fontSize: 11, fontWeight: 600, padding: "1px 9px", borderRadius: 999, background: "rgba(255,255,255,0.08)", color: "#cbd5e1" }}>{count}</span>
               )}
-            </h3>
-
-            {detections.length === 0 && (
-              <p className="text-sm text-content-muted">{NO_DETECTIONS}</p>
-            )}
-
-            <div className="space-y-2 scene">
-              {detections.map((d) => (
-                <DetectionCard
-                  key={d.detection_id}
-                  detection={d}
-                  verdict={verdictMap[d.detection_id]}
-                  judgement={judgements[d.detection_id]?.judgement ?? "unreviewed"}
-                  corrected={judgements[d.detection_id]?.corrected}
-                  selected={selectedId === d.detection_id}
-                  onSelect={() =>
-                    setSelectedId((s) => s === d.detection_id ? null : d.detection_id)
-                  }
-                  onJudge={(j, c) => handleJudge(d.detection_id, j, c)}
-                />
-              ))}
             </div>
-          </section>
 
-          {/* ── VLM summary ── */}
-          {(verd || scan.state === "verdicted" || scan.state === "reviewing") && (
-            <section aria-labelledby="verd-heading" className="rounded-xl border border-white/10 glass section-tint p-3 space-y-2">
-              <h3 id="verd-heading" className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider section-eyebrow">
-                <span className="w-1 h-3 rounded-full bg-[var(--sec-accent)] opacity-80" aria-hidden="true" />
-                {VERDICT_TITLE}
-              </h3>
-
-              {!verd && (
-                <p className="text-xs text-content-muted animate-pulse">{VERDICT_PENDING}</p>
-              )}
-
-              {verd && (
-                <>
-                  <p className="text-xs text-content-secondary mb-1">{VERDICT_SUMMARY_LABEL}</p>
-                  <p className="text-sm text-content-primary leading-relaxed">{verd.summary_uz}</p>
-                  <p className="text-xs text-content-muted italic mt-2">{VERDICT_ADVISORY_NOTE}</p>
-                  {verd.model && (
-                    <p className="text-xs text-content-muted font-mono mt-1">
-                      {verd.model.name} {verd.model.version}
-                    </p>
-                  )}
-                </>
-              )}
-
-              {scan.state === "analyzed" && !verd && (
-                <p className="text-xs text-content-muted">{VERDICT_UNAVAILABLE}</p>
-              )}
-            </section>
-          )}
-
-          {/* ── Missed annotations ── */}
-          <section aria-labelledby="missed-heading">
-            <h3 id="missed-heading" className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider section-eyebrow mb-2">
-              <span className="w-1 h-3 rounded-full bg-[var(--sec-accent)] opacity-80" aria-hidden="true" />
-              {MISSED_TITLE}
-              {annotations.length > 0 && (
-                <span className="ml-0.5 px-1.5 py-px rounded-full bg-white/5 text-content-muted font-semibold normal-case tracking-normal">
-                  {annotations.length}
-                </span>
-              )}
-            </h3>
-
-            {annotations.length === 0 && (
-              <p className="text-xs text-content-muted">{MISSED_ADD} — rasmda belgilash rejimini yoqing.</p>
+            {isPresent && (
+              <div className="flex flex-col" style={{ gap: 10 }}>
+                {detections.map((d) => (
+                  <DetectionCard
+                    key={d.detection_id}
+                    detection={d}
+                    verdict={verdictMap[d.detection_id]}
+                    judgement={judgements[d.detection_id]?.judgement ?? "unreviewed"}
+                    corrected={judgements[d.detection_id]?.corrected}
+                    selected={selectedId === d.detection_id}
+                    onSelect={() => setSelectedId((s) => s === d.detection_id ? null : d.detection_id)}
+                    onJudge={(j, c) => handleJudge(d.detection_id, j, c)}
+                  />
+                ))}
+              </div>
             )}
 
-            <div className="space-y-1.5">
-              {annotations.map((a, i) => (
-                <div
-                  key={i}
-                  className="flex items-start gap-2 p-2 rounded bg-amber-900/20 border border-amber-800/40 text-xs"
-                >
-                  <div className="flex-1 min-w-0">
-                    <p className="text-amber-300 font-medium">{THREAT_CATEGORY[a.category]}</p>
-                    <p className="text-content-muted font-mono">
-                      {a.box.x},{a.box.y} · {a.box.width}×{a.box.height}
-                    </p>
-                    {a.note_uz && <p className="text-content-secondary mt-0.5">{a.note_uz}</p>}
+            {isNoFind && (
+              <div style={{ padding: 14, borderRadius: 11, background: "rgba(148,163,184,0.07)", border: "1px solid rgba(148,163,184,0.22)" }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: "#cbd5e1", marginBottom: 5 }}>Shubhali buyum aniqlanmadi</div>
+                <div style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.5 }}>Bu ko'rikdan ozod etishni anglatmaydi. Yakuniy qaror operatorga tegishli.</div>
+              </div>
+            )}
+
+            {isAnalyzing && (
+              <div className="flex flex-col animate-pulse" style={{ gap: 8 }}>
+                <div style={{ height: 58, borderRadius: 11, background: "rgba(255,255,255,0.04)" }} />
+                <div style={{ height: 58, borderRadius: 11, background: "rgba(255,255,255,0.03)" }} />
+              </div>
+            )}
+
+            {isFailed && (
+              <div style={{ padding: 14, borderRadius: 11, background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.3)" }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: "#fbbf24", marginBottom: 5 }}>Tahlil bajarilmadi</div>
+                <div style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.5 }}>Natija ishonchli emas. Tasvirni qo'lda baholang.</div>
+              </div>
+            )}
+          </Card>
+
+          {/* System conclusion */}
+          <Card>
+            <div className="flex items-center" style={{ gap: 7, marginBottom: 10 }}>
+              <Info color="#818cf8" />
+              <span style={{ fontSize: 13, fontWeight: 700, letterSpacing: "-0.01em" }}>{VERDICT_TITLE}</span>
+            </div>
+
+            {verd && (
+              <>
+                <div style={{ fontSize: 13, color: "#cbd5e1", lineHeight: 1.6, marginBottom: 11 }}>{verd.summary_uz}</div>
+                {verd.model && (
+                  <div className="font-mono" style={{ fontSize: 11, color: "#7c8aa3", marginBottom: 11 }}>
+                    model: {verd.model.name} · v{verd.model.version}
                   </div>
-                  <button
-                    onClick={() => removeAnnotation(i)}
-                    className="text-content-muted hover:text-red-400 transition-colors shrink-0"
-                    aria-label={MISSED_DELETE}
-                  >
-                    ×
-                  </button>
+                )}
+                <div className="flex" style={{ gap: 8, padding: 10, borderRadius: 9, background: "rgba(99,102,241,0.08)", border: "1px solid rgba(99,102,241,0.22)" }}>
+                  <Info color="#a5b4fc" small />
+                  <span style={{ fontSize: 11.5, color: "#a5b4fc", lineHeight: 1.5 }}>{VERDICT_ADVISORY_NOTE}</span>
                 </div>
-              ))}
-            </div>
-          </section>
+              </>
+            )}
+
+            {!verd && isAnalyzing && (
+              <div className="flex items-center animate-pulse" style={{ gap: 9, color: "#8595ad", fontSize: 13 }}>
+                <span className="animate-spin" style={{ width: 16, height: 16, border: "2px solid rgba(148,163,184,0.3)", borderTopColor: "#94a3b8", borderRadius: 999 }} />
+                {/* VERDICT_PENDING */}Xulosa tayyorlanmoqda…
+              </div>
+            )}
+
+            {!verd && !isAnalyzing && (
+              <div style={{ fontSize: 13, fontWeight: 600, color: "#fbbf24" }}>{VERDICT_UNAVAILABLE}</div>
+            )}
+          </Card>
+
+          {/* Missed items */}
+          <Card>
+            <div style={{ fontSize: 13, fontWeight: 700, letterSpacing: "-0.01em", marginBottom: 10 }}>{MISSED_TITLE}</div>
+            {annotations.length > 0 ? (
+              <div className="flex flex-col" style={{ gap: 8 }}>
+                {annotations.map((a, i) => {
+                  const color = catColor(a.category);
+                  return (
+                    <div key={i} style={{ background: "rgba(245,158,11,0.07)", border: "1px solid rgba(245,158,11,0.3)", borderRadius: 10, padding: 10 }}>
+                      <div className="flex items-center justify-between" style={{ marginBottom: 6 }}>
+                        <div className="flex items-center" style={{ gap: 7 }}>
+                          <span style={{ width: 8, height: 8, borderRadius: 2, background: color }} aria-hidden="true" />
+                          <span style={{ fontSize: 12.5, fontWeight: 600, color }}>{THREAT_CATEGORY[a.category]}</span>
+                        </div>
+                        <span onClick={() => removeAnnotation(i)} role="button" aria-label={MISSED_DELETE}
+                          style={{ cursor: "pointer", color: "#7c8aa3", fontSize: 15, lineHeight: 1, width: 18, textAlign: "center" }}>×</span>
+                      </div>
+                      <div className="font-mono" style={{ fontSize: 10.5, color: "#7c8aa3" }}>
+                        x:{a.box.x} y:{a.box.y} w:{a.box.width} h:{a.box.height}
+                      </div>
+                      {a.note_uz && <div style={{ fontSize: 12, color: "#94a3b8", marginTop: 4 }}>{a.note_uz}</div>}
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div style={{ fontSize: 12, color: "#5b6679", lineHeight: 1.5 }}>
+                Detektor o'tkazib yuborgan buyum bo'lsa, viewer ustida «Chizish» orqali belgilang.
+              </div>
+            )}
+          </Card>
         </div>
       </div>
     </div>
+  );
+}
+
+// Small info glyph used in the conclusion card.
+function Info({ color, small }: { color: string; small?: boolean }) {
+  const s = small ? 15 : 15;
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"
+      width={s} height={s} style={{ flex: "none", marginTop: small ? 1 : 0 }} aria-hidden="true">
+      <circle cx="12" cy="12" r="9" /><path d="M12 16v-4" /><path d="M12 8h.01" />
+    </svg>
   );
 }

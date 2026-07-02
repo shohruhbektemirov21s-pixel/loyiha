@@ -13,23 +13,25 @@ export function useScanQueue(laneId: string | null = null) {
 
   const fetchRef = useRef<() => Promise<void>>();
 
+  // Pure data load — does NOT touch `loading`. The spinner is owned by the
+  // callers (initial mount + manual refresh) so background polls and WS nudges
+  // never flicker the ↻ button.
   const fetch = useCallback(async () => {
-    if (IS_MOCK) { setScans(MOCK_SCANS); setLoading(false); return; }
+    if (IS_MOCK) { setScans(MOCK_SCANS); return; }
     try {
       const res = await listScans({ lane_id: laneId ?? undefined, limit: 50 });
       setScans(res.items);
       setError(null);
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Xato");
-    } finally {
-      setLoading(false);
     }
   }, [laneId]);
 
   fetchRef.current = fetch;
 
   useEffect(() => {
-    void fetch();
+    setLoading(true);
+    void fetch().finally(() => setLoading(false));
     const id = setInterval(() => void fetchRef.current?.(), POLL_MS);
     return () => clearInterval(id);
   }, [fetch]);
@@ -45,7 +47,14 @@ export function useScanQueue(laneId: string | null = null) {
     }
   });
 
-  const refresh = useCallback(() => void fetch(), [fetch]);
+  // Manual refresh: spin the ↻ button so the operator gets visible feedback even
+  // when the result set is unchanged. The local /v1/scans call returns in ~10ms
+  // — too fast to perceive — so we hold the spinner for a minimum 450ms window.
+  const refresh = useCallback(() => {
+    setLoading(true);
+    const minSpin = new Promise((r) => setTimeout(r, 450));
+    void Promise.all([fetch(), minSpin]).finally(() => setLoading(false));
+  }, [fetch]);
 
   // Update a single scan record in-place (used when a decision is submitted).
   const upsert = useCallback((updated: ScanRecord) => {

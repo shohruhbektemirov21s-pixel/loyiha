@@ -39,8 +39,8 @@ export default {
         },
       },
       fontFamily: {
-        sans: ["Inter", "system-ui", "sans-serif"],
-        mono: ["JetBrains Mono", "monospace"],
+        sans: ["'IBM Plex Sans'", "system-ui", "sans-serif"],
+        mono: ["'IBM Plex Mono'", "monospace"],
       },
       // ── Depth / elevation tokens ─────────────────────────────────────
       // Layered, soft shadows establish a clear z-hierarchy (sunken → raised →
@@ -70,7 +70,7 @@ export default {
         xs:    "4px",
       },
       backgroundImage: {
-        "depth-app":    "radial-gradient(1200px 600px at 20% -10%, rgba(59,130,246,0.10), transparent 60%), radial-gradient(900px 500px at 110% 10%, rgba(124,58,237,0.08), transparent 55%), linear-gradient(180deg, #0f1117 0%, #0c0e14 100%)",
+        "depth-app":    "radial-gradient(1200px 620px at 82% -12%, rgba(56,80,140,0.20), transparent 60%), radial-gradient(900px 520px at -5% 110%, rgba(99,102,241,0.12), transparent 55%), #0a0d15",
         "depth-card":   "linear-gradient(160deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.015) 24%, rgba(0,0,0,0.10) 100%)",
         "depth-raised": "linear-gradient(160deg, rgba(255,255,255,0.07) 0%, rgba(255,255,255,0.02) 30%, rgba(0,0,0,0.12) 100%)",
         "glass-sheen":  "linear-gradient(120deg, rgba(255,255,255,0.10) 0%, rgba(255,255,255,0) 40%)",

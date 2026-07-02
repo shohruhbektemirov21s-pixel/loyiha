@@ -8,20 +8,21 @@
   }
 
   html {
-    font-family: "Inter", system-ui, sans-serif;
+    font-family: "IBM Plex Sans", system-ui, sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    letter-spacing: -0.01em;
   }
 
   body {
-    /* Layered depth backdrop: dual coloured radials + vertical fade.
+    /* Layered depth backdrop: dual coloured radials over a near-black base.
        Kept very low-alpha so text contrast over it stays WCAG AA. */
     background:
-      radial-gradient(1200px 600px at 20% -10%, rgba(59,130,246,0.10), transparent 60%),
-      radial-gradient(900px 500px at 110% 10%, rgba(124,58,237,0.08), transparent 55%),
-      linear-gradient(180deg, #0f1117 0%, #0c0e14 100%);
+      radial-gradient(1200px 620px at 82% -12%, rgba(56,80,140,0.20), transparent 60%),
+      radial-gradient(900px 520px at -5% 110%, rgba(99,102,241,0.12), transparent 55%),
+      #0a0d15;
     background-attachment: fixed;
-    color: #f1f5f9;
+    color: #e2e8f0;
     margin: 0;
     padding: 0;
     overflow: hidden;
@@ -104,26 +105,21 @@
     background-size: 32px 32px;
   }
 
-  /* Frosted-glass surface — translucent fill + blur + hairline border +
-     top rim highlight. Text on top keeps full-opacity content-* colours so
-     contrast stays AA. */
+  /* Frosted-glass surface — translucent white fill over the near-black base +
+     blur + hairline border. Matches the design prototype's signature look.
+     Text on top keeps full-opacity content-* colours so contrast stays AA. */
   .glass {
-    background-color: rgba(26, 29, 39, 0.62);
-    backdrop-filter: blur(14px) saturate(140%);
-    -webkit-backdrop-filter: blur(14px) saturate(140%);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    box-shadow:
-      0 6px 14px rgba(0,0,0,0.50), 0 10px 28px rgba(0,0,0,0.40),
-      inset 0 1px 0 0 rgba(255,255,255,0.06);
+    background-color: rgba(255, 255, 255, 0.04);
+    backdrop-filter: blur(14px) saturate(130%);
+    -webkit-backdrop-filter: blur(14px) saturate(130%);
+    border: 1px solid rgba(255, 255, 255, 0.09);
   }
   .glass-strong {
-    background-color: rgba(20, 23, 31, 0.78);
-    backdrop-filter: blur(18px) saturate(150%);
-    -webkit-backdrop-filter: blur(18px) saturate(150%);
-    border: 1px solid rgba(255, 255, 255, 0.07);
-    box-shadow:
-      0 1px 2px rgba(0,0,0,0.40),
-      inset 0 1px 0 0 rgba(255,255,255,0.05);
+    background-color: rgba(255, 255, 255, 0.06);
+    backdrop-filter: blur(18px) saturate(140%);
+    -webkit-backdrop-filter: blur(18px) saturate(140%);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    box-shadow: 0 8px 30px rgba(0,0,0,0.40);
   }
 
   /* Raised panel — opaque card with a top-lit gradient + elevation shadow. */
@@ -189,6 +185,20 @@
     100% { opacity: 1; transform: translateY(0) scale(1); }
   }
   .animate-rise-in { animation: riseIn 0.30s cubic-bezier(0.16,1,0.3,1); }
+
+  /* Slide-over (audit) — in from the right edge. */
+  @keyframes slideInRight {
+    0%   { opacity: 0; transform: translateX(28px); }
+    100% { opacity: 1; transform: translateX(0); }
+  }
+  .animate-slide-in-right { animation: slideInRight 0.25s ease; }
+
+  /* Alert banner — drops down from the top. */
+  @keyframes dropDown {
+    0%   { opacity: 0; transform: translateY(-12px); }
+    100% { opacity: 1; transform: translateY(0); }
+  }
+  .animate-drop-down { animation: dropDown 0.3s ease; }
 
   /* ───────────────────────────────────────────────────────────────
      SECTION IDENTITY SYSTEM (visual variety, not monotone)

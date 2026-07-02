@@ -1,8 +1,8 @@
 import { useEffect, useRef } from "react";
-import { ShieldAlert, Volume2, VolumeX, X } from "lucide-react";
+import { AlertTriangle, X } from "lucide-react";
 import type { RiskBand } from "../lib/types";
 import {
-  HIGH_ALERT_TITLE, HIGH_ALERT_BODY, HIGH_ALERT_OPEN, HIGH_ALERT_DISMISS,
+  HIGH_ALERT_TITLE, HIGH_ALERT_OPEN, HIGH_ALERT_DISMISS,
   SOUND_ON, SOUND_OFF,
 } from "../lib/uz";
 
@@ -61,44 +61,109 @@ export function HighRiskBanner({
     }
   }, [alert.scanId, soundEnabled]);
 
+  // Time shown in the secondary line — derived from the alert timestamp as HH:MM.
+  const time = (() => {
+    const d = new Date(alert.ts);
+    return Number.isNaN(d.getTime())
+      ? alert.ts
+      : d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  })();
+  const shortId = alert.scanId.slice(0, 8) + "…";
+
   return (
     <div
       role="alert"
       aria-live="assertive"
-      className="relative z-20 flex items-center gap-3 px-4 py-2.5 bg-risk-high-bg border-b-2 border-risk-high-border text-risk-high-text halo-high animate-slide-in"
+      className="animate-drop-down"
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 16,
+        padding: "11px 18px",
+        background: "rgba(239,68,68,0.13)",
+        borderBottom: "1px solid rgba(239,68,68,0.4)",
+        flex: "none",
+      }}
     >
-      <span className="grid place-items-center w-9 h-9 rounded-lg bg-red-950/60 border border-red-700/60 shadow-glow-high shrink-0" aria-hidden="true">
-        <ShieldAlert size={22} className="text-red-400 animate-pulse" />
-      </span>
-      <div className="flex-1 min-w-0">
-        <p className="text-sm font-bold">{HIGH_ALERT_TITLE}</p>
-        <p className="text-sm text-red-200/90">{HIGH_ALERT_BODY}</p>
-      </div>
-
-      <button
-        onClick={() => onOpen(alert.scanId)}
-        className="press shrink-0 px-3 py-1.5 rounded-lg text-sm font-semibold bg-gradient-to-b from-red-500 to-red-600 hover:from-red-400 hover:to-red-500 text-white shadow-elev-2 transition-all"
+      <span
+        className="animate-pulse"
+        aria-hidden="true"
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          width: 34,
+          height: 34,
+          borderRadius: 9,
+          background: "rgba(239,68,68,0.2)",
+          color: "#fca5a5",
+          flex: "none",
+        }}
       >
-        {HIGH_ALERT_OPEN}
-      </button>
+        <AlertTriangle size={20} />
+      </span>
+
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 14, fontWeight: 700, color: "#fecaca" }}>
+          {HIGH_ALERT_TITLE}
+        </div>
+        <div style={{ fontSize: 12.5, color: "#fca5a5" }}>
+          <span className="font-mono">{shortId}</span>
+          {" · "}
+          {time}
+        </div>
+      </div>
 
       <button
         onClick={onToggleSound}
         aria-pressed={soundEnabled}
         aria-label={soundEnabled ? SOUND_ON : SOUND_OFF}
         title={soundEnabled ? SOUND_ON : SOUND_OFF}
-        className="shrink-0 p-1.5 rounded text-red-200 hover:bg-red-900/50 transition-colors"
+        style={{
+          fontSize: 12,
+          fontWeight: 600,
+          color: "#fca5a5",
+          padding: "6px 11px",
+          borderRadius: 8,
+          background: "rgba(0,0,0,0.2)",
+          border: "1px solid rgba(239,68,68,0.3)",
+        }}
       >
-        {soundEnabled ? <Volume2 size={16} aria-hidden="true" /> : <VolumeX size={16} aria-hidden="true" />}
+        {soundEnabled ? SOUND_ON : SOUND_OFF}
+      </button>
+
+      <button
+        onClick={() => onOpen(alert.scanId)}
+        style={{
+          fontSize: 12.5,
+          fontWeight: 700,
+          color: "#fff",
+          padding: "7px 16px",
+          borderRadius: 8,
+          background: "#dc2626",
+          border: "none",
+        }}
+      >
+        {HIGH_ALERT_OPEN}
       </button>
 
       <button
         onClick={onDismiss}
         aria-label={HIGH_ALERT_DISMISS}
         title={HIGH_ALERT_DISMISS}
-        className="shrink-0 p-1.5 rounded text-red-200 hover:bg-red-900/50 transition-colors"
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          width: 30,
+          height: 30,
+          borderRadius: 8,
+          color: "#fca5a5",
+          background: "transparent",
+          border: "1px solid rgba(239,68,68,0.25)",
+        }}
       >
-        <X size={16} aria-hidden="true" />
+        <X size={15} aria-hidden="true" />
       </button>
     </div>
   );

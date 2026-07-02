@@ -6,7 +6,7 @@
 // dispatched), and that malformed JSON is discarded silently. Deterministic —
 // no real socket, no timers fired.
 
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach } from "vitest";
 import { ScanWebSocket } from "./ws";
 import type { WsMessage, WsScanFlagged, WsCameraAnalysis } from "./types";
 

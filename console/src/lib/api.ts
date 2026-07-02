@@ -88,6 +88,22 @@ interface RawScanList {
 // ---------------------------------------------------------------------------
 // Adapters: backend flat shape → frontend contract shape
 // ---------------------------------------------------------------------------
+// The read API (GET /v1/scans/{id}) is lossy: it omits each frame's StorageRef
+// (uri/sha256/size) and the detector's model version. The DetectionResult is
+// echoed back verbatim inside OperatorFeedback (POST /v1/feedback), which the
+// v1 contract validates strictly (uri≥1, sha256=64hex, size_bytes>0,
+// version≥1). We therefore fill these unknowable-on-read fields with
+// contract-valid placeholders so the operator's decision still submits. They
+// are presentation-irrelevant: the viewer loads bytes via frameImageUrl(), not
+// image.uri.
+const PLACEHOLDER_SHA = "0".repeat(64);
+const placeholderRef = (scanId: string, frameId: string, mediaType: string) => ({
+  uri: `stored://${scanId}/${frameId}`,
+  media_type: mediaType || "image/jpeg",
+  sha256: PLACEHOLDER_SHA,
+  size_bytes: 1,
+});
+
 function adaptDetection(d: RawDetection): Detection {
   return {
     detection_id: d.detection_id,
@@ -110,7 +126,7 @@ function adaptDetectionResult(s: RawScanDetail): DetectionResult | null {
       frame_id:         f.frame_id,
       width_px:         f.width_px,
       height_px:        f.height_px,
-      image:            { uri: "", media_type: f.media_type, sha256: "", size_bytes: 0 },
+      image:            placeholderRef(s.scan_id, f.frame_id, f.media_type),
       view_label:       null,
       pixel_spacing_mm: null,
     }));
@@ -120,7 +136,7 @@ function adaptDetectionResult(s: RawScanDetail): DetectionResult | null {
       frame_id:         fid,
       width_px:         1024,
       height_px:        768,
-      image:            { uri: "", media_type: "image/png", sha256: "", size_bytes: 0 },
+      image:            placeholderRef(s.scan_id, fid, "image/png"),
       view_label:       null,
       pixel_spacing_mm: null,
     }));
@@ -132,7 +148,7 @@ function adaptDetectionResult(s: RawScanDetail): DetectionResult | null {
     scan_id:        s.scan_id,
     status:         "completed",
     emitted_at:     s.analyzed_at ?? s.acquired_at,
-    model:          { name: "detector", version: "", weights_sha256: null, runtime: null },
+    model:          { name: "detector", version: "0.0.0", weights_sha256: null, runtime: null },
     frames,
     detections:     s.detections.map(adaptDetection),
     error:          null,
