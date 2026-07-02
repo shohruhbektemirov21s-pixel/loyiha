@@ -68,8 +68,15 @@ export class ScanWebSocket {
     const qs = new URLSearchParams();
     if (token)        qs.set("token",   token);
     if (this.laneId)  qs.set("lane_id", this.laneId);
-    const proto = location.protocol === "https:" ? "wss" : "ws";
-    const url   = `${proto}://${location.host}/v1/ws?${qs}`;
+    let proto = location.protocol === "https:" ? "wss" : "ws";
+    let host = location.host;
+    const apiUrl = import.meta.env.VITE_API_URL;
+    if (apiUrl) {
+      const cleanUrl = apiUrl.replace(/^(https?:\/\/)/, "");
+      host = cleanUrl.split("/")[0];
+      proto = apiUrl.startsWith("https") ? "wss" : "ws";
+    }
+    const url   = `${proto}://${host}/v1/ws?${qs}`;
 
     this.ws = new WebSocket(url);
 

@@ -17,7 +17,7 @@ import type {
   ScreenResponse,
 } from "./types";
 
-const BASE = "/v1";
+const BASE = import.meta.env.VITE_API_URL ? `${import.meta.env.VITE_API_URL.replace(/\/$/, '')}/v1` : "/v1";
 
 // ---------------------------------------------------------------------------
 // Backend response shapes (app/api/v1/scans.py) — flat, DB-flavored.
