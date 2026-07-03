@@ -31,7 +31,7 @@ services:
       - key: XRAY_ENABLE_DOCS
         value: "true"
       - key: XRAY_AUTH_BYPASS
-        value: "false"
+        value: "true"
 
       # Database connection (mapped to asyncpg)
       - key: XRAY_DB_URL
