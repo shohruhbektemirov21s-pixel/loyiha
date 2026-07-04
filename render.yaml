@@ -73,7 +73,11 @@ services:
       - key: XRAY_AUDIT_HMAC_KEY
         generateValue: true
 
-      # Vast.ai SSH Tunnel Settings (Set SSH_PRIVATE_KEY in dashboard)
+      # Vast.ai GPU auto-start + SSH Tunnel
+      - key: VAST_API_KEY
+        sync: false
+      - key: VAST_INSTANCE_ID
+        value: "43598057"
       - key: VAST_SSH_HOST
         value: ssh5.vast.ai
       - key: VAST_SSH_PORT
