@@ -52,6 +52,36 @@ if [ -n "${SSH_PRIVATE_KEY:-}" ]; then
 
     SSH_HOST="${VAST_SSH_HOST:-ssh5.vast.ai}"
     SSH_PORT="${VAST_SSH_PORT:-38056}"
+    MODEL="${XRAY_VLM_MODEL:-qwen3-vl:8b}"
+
+    # ── Vast box'da ollama ishlayotganini ta'minlash (self-healing) ──────
+    # Instance to'xtatilib qayta yoqilganda 'ollama serve' o'zi qaytmasligi
+    # mumkin. Tunnel ochishdan oldin box'ga kirib, ollama'ni (kerak bo'lsa)
+    # ishga tushiramiz; model yo'q bo'lsa fon'da yuklab olamiz. Model instance
+    # diskida saqlanadi, shuning uchun odatda faqat 'serve' qayta kerak bo'ladi.
+    echo "[ssh] Vast box'da ollama holati tekshirilmoqda..."
+    ssh -i "$KEY" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+        -o ConnectTimeout=15 -p "$SSH_PORT" "root@${SSH_HOST}" \
+        "MODEL='$MODEL' bash -s" <<'REMOTE' 2>&1 | sed 's/^/[vast] /' || echo "[ssh] remote ensure: ulanmadi (kalit/instance holatini tekshiring)"
+set +e
+if ! curl -fsS --max-time 5 http://127.0.0.1:11434/api/version >/dev/null 2>&1; then
+    echo "ollama ishlamayapti — ishga tushirilmoqda..."
+    pkill -f "ollama serve" 2>/dev/null; sleep 1
+    OLLAMA_HOST=0.0.0.0:11434 OLLAMA_NO_ANALYTICS=1 nohup ollama serve >/var/log/ollama.log 2>&1 &
+    for i in $(seq 1 30); do
+        curl -fsS --max-time 3 http://127.0.0.1:11434/api/version >/dev/null 2>&1 && { echo "ollama ishga tushdi"; break; }
+        sleep 1
+    done
+else
+    echo "ollama allaqachon ishlayapti"
+fi
+if OLLAMA_HOST=127.0.0.1:11434 ollama ls 2>/dev/null | grep -q "${MODEL%%:*}"; then
+    echo "model $MODEL mavjud"
+else
+    echo "model $MODEL YO'Q — fon'da yuklab olinmoqda (bir necha daqiqa)..."
+    OLLAMA_HOST=127.0.0.1:11434 nohup ollama pull "$MODEL" >/var/log/ollama-pull.log 2>&1 &
+fi
+REMOTE
 
     echo "[ssh] Tunnel ochilmoqda ${SSH_HOST}:${SSH_PORT} -> ollama:11434 ..."
     tunnel_up=0
