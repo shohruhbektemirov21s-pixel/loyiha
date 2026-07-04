@@ -38,27 +38,52 @@ else
 fi
 
 # ── 2. SSH tunnel ochish (Vast.ai GPU'ga) ─────────────────────
+# Render backend Vast GPU'dagi Ollama'ga (11434) SSH tunnel orqali ulanadi.
+# Bu bosqichsiz VLM (rasm "Tahlil") ishlamaydi. Shuning uchun aniq log +
+# ExitOnForwardFailure (jim muvaffaqiyatsizlikni oldini oladi) + keepalive +
+# qayta urinish qo'yildi.
 if [ -n "${SSH_PRIVATE_KEY:-}" ]; then
     echo "[ssh] SSH key sozlanmoqda..."
     mkdir -p ~/.ssh
-    echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
-    chmod 600 ~/.ssh/id_rsa
-    
+    KEY=~/.ssh/vast_tunnel
+    # printf key format (oxirgi newline'ni saqlaydi — OpenSSH buni talab qiladi).
+    printf '%s\n' "$SSH_PRIVATE_KEY" > "$KEY"
+    chmod 600 "$KEY"
+
     SSH_HOST="${VAST_SSH_HOST:-ssh5.vast.ai}"
     SSH_PORT="${VAST_SSH_PORT:-38056}"
-    
-    echo "[ssh] Tunnel ochilmoqda ${SSH_HOST}:${SSH_PORT}..."
-    ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-        -p "$SSH_PORT" "root@${SSH_HOST}" \
-        -L 11434:localhost:11434 -N -f 2>/dev/null || echo "[ssh] Warning: SSH tunnel ochilmadi"
-    
-    # Tunnel tekshirish
-    sleep 2
-    if curl -s --max-time 5 http://127.0.0.1:11434/api/version >/dev/null 2>&1; then
-        echo "[ssh] ✅ Ollama tunnel ishlayapti!"
-    else
-        echo "[ssh] ⏳ Tunnel ochildi, Ollama hali javob bermayapti"
+
+    echo "[ssh] Tunnel ochilmoqda ${SSH_HOST}:${SSH_PORT} -> ollama:11434 ..."
+    tunnel_up=0
+    for attempt in 1 2 3; do
+        pkill -f "11434:localhost:11434" 2>/dev/null || true
+        # -i: aniq kalit | ExitOnForwardFailure: forward bog'lanmasa darhol xato |
+        # ServerAlive*: tunnel uzilmasin | -N -f: uvicorn'dan oldin fon'ga o'tsin.
+        ssh -i "$KEY" \
+            -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+            -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=3 \
+            -o ConnectTimeout=15 \
+            -p "$SSH_PORT" "root@${SSH_HOST}" \
+            -L 11434:localhost:11434 -N -f \
+            && echo "[ssh] tunnel jarayoni fon'ga o'tdi (urinish ${attempt})" \
+            || echo "[ssh] urinish ${attempt}: ssh ulanmadi"
+        sleep 3
+        if curl -fsS --max-time 6 http://127.0.0.1:11434/api/version >/dev/null 2>&1; then
+            echo "[ssh] ✅ Ollama tunnel ishlayapti (urinish ${attempt})."
+            tunnel_up=1
+            break
+        fi
+        echo "[ssh] urinish ${attempt}: ollama hali javob bermayapti, qayta urinaman..."
+        sleep 3
+    done
+    if [ "$tunnel_up" != "1" ]; then
+        echo "[ssh] ⚠️  OGOHLANTIRISH: Ollama tunnel OCHILMADI — VLM (rasm Tahlili) ishlamaydi." >&2
+        echo "[ssh]     Tekshiring: (1) Render'da SSH_PRIVATE_KEY to'g'ri kalitmi," >&2
+        echo "[ssh]     (2) Vast instance ${VAST_INSTANCE_ID:-?} 'running' holatidami," >&2
+        echo "[ssh]     (3) Vast box'da 'ollama serve' ishlab turibdimi." >&2
     fi
+else
+    echo "[ssh] ⚠️  SSH_PRIVATE_KEY sozlanmagan — Vast ollama tunnel yo'q, VLM ishlamaydi." >&2
 fi
 
 # ── 3. Database migratsiyalari ────────────────────────────────
