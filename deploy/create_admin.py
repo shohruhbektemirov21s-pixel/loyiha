@@ -36,6 +36,8 @@ async def create_admin(
     password: str,
     lane_ids: list[str],
 ) -> None:
+    import json
+
     import asyncpg
 
     raw_url = db_url.replace("postgresql+asyncpg://", "postgresql://")
@@ -49,7 +51,7 @@ async def create_admin(
         result = await conn.fetchrow(
             """
             INSERT INTO operators (username, hashed_password, role, lane_ids, is_active)
-            VALUES ($1, $2, 'admin', $3, true)
+            VALUES ($1, $2, 'admin', $3::jsonb, true)
             ON CONFLICT (username) DO UPDATE
                 SET hashed_password = EXCLUDED.hashed_password,
                     role = 'admin',
@@ -58,7 +60,7 @@ async def create_admin(
             """,
             username,
             hashed,
-            lane_ids,
+            json.dumps(lane_ids),
         )
         log.info(
             "Admin created/updated: id=%s username=%s role=%s",

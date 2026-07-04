@@ -16,11 +16,18 @@ BEGIN;
 -- ------------------------------------------------------------
 -- Roles and schema
 -- ------------------------------------------------------------
-CREATE SCHEMA IF NOT EXISTS xray;
-SET search_path TO xray, public;
+-- Tables live in the default `public` schema — this matches the ORM
+-- (app/db/models.py uses unqualified __tablename__) and the raw
+-- connections in deploy/create_admin.py. Do NOT create a separate `xray`
+-- schema here: the application never sets search_path to it, so any table
+-- created outside `public` would be invisible at runtime.
+SET search_path TO public;
 
--- Application user (created outside this script on first deploy):
---   CREATE ROLE xray_api LOGIN PASSWORD '...';
+-- Application user (least-privilege role, created outside this script on a
+-- self-managed box):  CREATE ROLE xray_api LOGIN PASSWORD '...';
+-- On single-role managed platforms (Render, Heroku, …) this role does not
+-- exist and the app connects as the DB owner — the grants below are applied
+-- conditionally so their absence never aborts the migration.
 
 -- ------------------------------------------------------------
 -- Sequence for audit chain ordering
@@ -190,16 +197,23 @@ CREATE INDEX IF NOT EXISTS ix_threshold_configs_category
     ON threshold_configs (category, is_active);
 
 -- ------------------------------------------------------------
--- Grants — xray_api role has no DELETE on audit_events
+-- Grants — xray_api role has no DELETE on audit_events.
+-- Applied only when the role exists (self-managed deploy); on managed
+-- single-role platforms the block is a no-op so migration never aborts.
 -- ------------------------------------------------------------
-GRANT USAGE ON SCHEMA xray TO xray_api;
-GRANT SELECT, INSERT, UPDATE ON operators, scans,
-    scan_detections, scan_verdicts, scan_feedback,
-    threshold_configs TO xray_api;
-GRANT SELECT, INSERT ON audit_events TO xray_api;    -- NO UPDATE, NO DELETE
-GRANT USAGE ON SEQUENCE audit_event_seq TO xray_api;
--- Operators table: the API also needs to update last_login_at
-GRANT UPDATE (last_login_at, is_active) ON operators TO xray_api;
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'xray_api') THEN
+        GRANT SELECT, INSERT, UPDATE ON operators, scans,
+            scan_detections, scan_verdicts, scan_feedback,
+            threshold_configs TO xray_api;
+        GRANT SELECT, INSERT ON audit_events TO xray_api;    -- NO UPDATE, NO DELETE
+        GRANT USAGE ON SEQUENCE audit_event_seq TO xray_api;
+        -- Operators table: the API also needs to update last_login_at
+        GRANT UPDATE (last_login_at, is_active) ON operators TO xray_api;
+    END IF;
+END
+$$;
 
 -- ------------------------------------------------------------
 -- Seed: default thresholds (conservative — alert early, clear cautiously)

@@ -62,15 +62,25 @@ if [ -n "${SSH_PRIVATE_KEY:-}" ]; then
 fi
 
 # ── 3. Database migratsiyalari ────────────────────────────────
+# Migratsiya MAJBURIY: schema yaratilmasa ilova ishlamaydi, shuning uchun
+# xatoni yutib yubormaymiz — deploy shu yerda to'xtaydi va log aniq bo'ladi.
+# Admin faqat migratsiya muvaffaqiyatli o'tgandagina yaratiladi.
 if [ -n "${XRAY_DB_URL:-}" ]; then
     echo "[db] Migratsiyalar ishga tushirilmoqda..."
-    python3 -m app.db.migrate || echo "[db] Warning: migratsiya xatoligi"
-    
-    # Admin foydalanuvchi yaratish
+    if ! python3 -m app.db.migrate; then
+        echo "[db] FATAL: migratsiya muvaffaqiyatsiz — deploy to'xtatildi." >&2
+        exit 1
+    fi
+    echo "[db] ✅ Migratsiya tugadi."
+
+    # Admin foydalanuvchi yaratish (idempotent — ON CONFLICT DO UPDATE)
     if [ -n "${ADMIN_USERNAME:-}" ] && [ -n "${ADMIN_PASSWORD:-}" ]; then
         echo "[db] Admin foydalanuvchi yaratilmoqda..."
         ADMIN_USERNAME="$ADMIN_USERNAME" ADMIN_PASSWORD="$ADMIN_PASSWORD" \
-            python3 deploy/create_admin.py --lane-ids "lane-1,lane-2" || echo "[db] Warning: admin yaratish xatoligi"
+            python3 deploy/create_admin.py --lane-ids "lane-1,lane-2" \
+            || echo "[db] Warning: admin yaratish xatoligi (server baribir ishga tushadi)"
+    else
+        echo "[db] ADMIN_USERNAME/ADMIN_PASSWORD sozlanmagan — admin yaratilmadi."
     fi
 else
     echo "[db] XRAY_DB_URL sozlanmagan. Stub rejim."
