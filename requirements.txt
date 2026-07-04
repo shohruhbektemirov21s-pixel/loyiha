@@ -2,6 +2,10 @@
 # these wheels are mirrored to a local index; floating versions break repro.
 fastapi==0.135.3
 uvicorn[standard]==0.38.0
+# Required by FastAPI to parse multipart/form-data — the X-ray image upload
+# endpoint (app/api/v1/screen.py) declares UploadFile = File(...). Without it
+# FastAPI raises at route registration and the app crashes on import.
+python-multipart==0.0.22
 pydantic==2.12.5
 pydantic-settings==2.14.1
 # httpx is pulled in by fastapi.testclient (dev/test). Listed for the mirror.
