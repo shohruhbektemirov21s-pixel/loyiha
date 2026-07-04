@@ -327,6 +327,24 @@ def create_app() -> FastAPI:
             "db": "live" if _db_enabled else "stub",
         }
 
+    # ---- Operator console (co-hosted, same-origin) ------------------------
+    # Serve the built React console from this same app so the frontend calls
+    # its own origin's /v1/* — no separate host, no cross-origin URL to
+    # configure, no CORS. Mounted LAST so /v1, /health, /docs, /openapi.json
+    # keep precedence. Guarded: on a box without a build (contract-only / dev)
+    # we simply skip it. The console is built with an empty VITE_API_URL so its
+    # API base is the relative "/v1".
+    from pathlib import Path as _Path
+
+    _console_dist = _Path(__file__).resolve().parent.parent / "console" / "dist"
+    if (_console_dist / "index.html").is_file():
+        from fastapi.staticfiles import StaticFiles
+
+        app.mount("/", StaticFiles(directory=str(_console_dist), html=True), name="console")
+        log.info("operator console mounted at / (%s)", _console_dist)
+    else:
+        log.info("operator console not built (%s missing) — API-only.", _console_dist)
+
     return app
 
 
