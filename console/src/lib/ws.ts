@@ -74,7 +74,9 @@ export class ScanWebSocket {
     if (apiUrl) {
       const cleanUrl = apiUrl.replace(/^(https?:\/\/)/, "");
       host = cleanUrl.split("/")[0];
-      proto = apiUrl.startsWith("https") ? "wss" : "ws";
+      // A bare host (Render fromService) has no scheme — default to secure wss.
+      // Only fall back to plain ws when the URL is explicitly http://.
+      proto = apiUrl.startsWith("http://") ? "ws" : "wss";
     }
     const url   = `${proto}://${host}/v1/ws?${qs}`;
 

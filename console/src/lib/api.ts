@@ -17,7 +17,12 @@ import type {
   ScreenResponse,
 } from "./types";
 
-const BASE = import.meta.env.VITE_API_URL ? `${import.meta.env.VITE_API_URL.replace(/\/$/, '')}/v1` : "/v1";
+// VITE_API_URL may be a full URL (https://host) or a bare host (Render's
+// fromService injects just the hostname). Normalise to an https origin so the
+// bundle never issues scheme-relative or mixed-content requests.
+const _RAW = (import.meta.env.VITE_API_URL ?? "").trim().replace(/\/+$/, "");
+const _ORIGIN = _RAW ? (/^https?:\/\//.test(_RAW) ? _RAW : `https://${_RAW}`) : "";
+const BASE = _ORIGIN ? `${_ORIGIN}/v1` : "/v1";
 
 // ---------------------------------------------------------------------------
 // Backend response shapes (app/api/v1/scans.py) — flat, DB-flavored.
