@@ -269,12 +269,13 @@ def build_audit_sink(
             "XRAY_AUDIT_HMAC_KEY is not set. "
             "Generate with: python -c \"import secrets; print(secrets.token_hex(32))\""
         )
+    # Accept a hex key or any high-entropy secret (base64 from a platform
+    # generator, etc.). See app.security_keys for the normalisation contract.
+    from app.security_keys import normalise_key_bytes
     try:
-        key_bytes = bytes.fromhex(raw)
+        key_bytes = normalise_key_bytes(raw)
     except ValueError as exc:
-        raise RuntimeError(f"XRAY_AUDIT_HMAC_KEY is not valid hex: {exc}") from exc
-    if len(key_bytes) < 16:
-        raise RuntimeError("XRAY_AUDIT_HMAC_KEY must be at least 32 hex chars (16 bytes).")
+        raise RuntimeError(f"XRAY_AUDIT_HMAC_KEY is invalid: {exc}") from exc
     return PostgreSQLAuditSink(session_factory, key_bytes)
 
 

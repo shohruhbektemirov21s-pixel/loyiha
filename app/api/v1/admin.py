@@ -254,8 +254,10 @@ async def verify_audit_chain(
     db:     AsyncSession = Depends(get_db),
 ) -> ChainVerifyOut:
     from app.audit.sink import verify_chain
-    from app.settings import get_settings
+    from app.security_keys import normalise_key_bytes
     import os
-    key_bytes = bytes.fromhex(os.environ.get("XRAY_AUDIT_HMAC_KEY", "00" * 32))
+    # Same normalisation the sink used to write the chain, so verification
+    # derives byte-identical keys (hex decoded as-is; else SHA-256 derived).
+    key_bytes = normalise_key_bytes(os.environ.get("XRAY_AUDIT_HMAC_KEY", "00" * 32))
     ok, msg = await verify_chain(db, key_bytes, limit=limit)
     return ChainVerifyOut(ok=ok, message=msg)

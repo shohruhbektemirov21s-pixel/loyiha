@@ -310,16 +310,15 @@ class Settings(BaseSettings):
                     "is wired or environment=prod. Generate: "
                     'python -c "import secrets; print(secrets.token_hex(32))"'
                 )
+            # Accept a hex key (secrets.token_hex) OR any high-entropy secret a
+            # platform generator emits (Render generateValue / k8s secrets are
+            # base64, which bytes.fromhex rejects). normalise_key_bytes decodes
+            # clean hex as-is and hashes anything else to a stable 32-byte key.
+            from app.security_keys import normalise_key_bytes
             try:
-                hmac_bytes = bytes.fromhex(self.audit_hmac_key)
+                normalise_key_bytes(self.audit_hmac_key)
             except ValueError as exc:
-                raise ValueError(
-                    f"XRAY_AUDIT_HMAC_KEY must be valid hex (64 chars / 32 bytes): {exc}"
-                ) from exc
-            if len(hmac_bytes) < 16:
-                raise ValueError(
-                    "XRAY_AUDIT_HMAC_KEY must be at least 32 hex chars (16 bytes)."
-                )
+                raise ValueError(f"XRAY_AUDIT_HMAC_KEY is invalid: {exc}") from exc
         return self
 
     @property

@@ -13,7 +13,7 @@ import type {
   RiskBand,
   OperatorFeedback,
   FeedbackReceipt,
-  TokenResponse,
+  // TokenResponse,  // login() bilan birga izohga olindi (login tizimi o'chirilgan)
   ScreenResponse,
 } from "./types";
 
@@ -280,20 +280,23 @@ async function request<T>(
 // ---------------------------------------------------------------------------
 // Auth
 // ---------------------------------------------------------------------------
-export async function login(
-  username: string,
-  password: string,
-): Promise<TokenResponse> {
-  const res = await fetch(`${BASE}/auth/login`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ username, password }),
-  });
-  if (!res.ok) {
-    throw new ApiError(res.status, "Foydalanuvchi nomi yoki parol noto'g'ri.");
-  }
-  return res.json() as Promise<TokenResponse>;
-}
+// Login tizimi VAQTINCHA o'chirilgan (test rejimi, auth_bypass). /auth/login
+// chaqiruvi izohga olindi. Qayta yoqish uchun bu funksiyani va yuqoridagi
+// TokenResponse importini oching, so'ng LoginScreen'ni App.tsx da tiklang.
+// export async function login(
+//   username: string,
+//   password: string,
+// ): Promise<TokenResponse> {
+//   const res = await fetch(`${BASE}/auth/login`, {
+//     method: "POST",
+//     headers: { "Content-Type": "application/json" },
+//     body: JSON.stringify({ username, password }),
+//   });
+//   if (!res.ok) {
+//     throw new ApiError(res.status, "Foydalanuvchi nomi yoki parol noto'g'ri.");
+//   }
+//   return res.json() as Promise<TokenResponse>;
+// }
 
 // ---------------------------------------------------------------------------
 // Scans

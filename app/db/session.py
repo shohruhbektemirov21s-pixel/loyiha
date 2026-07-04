@@ -44,6 +44,18 @@ def init_db(database_url: str, *, echo: bool = False, pool_size: int = 10, ssl: 
         log.warning("init_db called twice — ignoring second call")
         return
 
+    # Normalise the DSN scheme to the async driver. A managed platform (Render's
+    # `fromDatabase.connectionString`, Heroku, …) hands out a plain
+    # `postgresql://` (or legacy `postgres://`) URL; SQLAlchemy would then try
+    # the *sync* psycopg driver on our async engine and fail. Rewrite the scheme
+    # to `postgresql+asyncpg://` unless it is already an explicit driver DSN.
+    if database_url.startswith("postgresql+asyncpg://"):
+        pass
+    elif database_url.startswith("postgresql://"):
+        database_url = "postgresql+asyncpg://" + database_url[len("postgresql://"):]
+    elif database_url.startswith("postgres://"):
+        database_url = "postgresql+asyncpg://" + database_url[len("postgres://"):]
+
     connect_args: dict = {}
     if ssl:
         import ssl as _ssl

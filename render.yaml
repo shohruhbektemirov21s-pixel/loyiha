@@ -22,8 +22,10 @@ services:
     startCommand: chmod +x deploy/render_start.sh && ./deploy/render_start.sh
     plan: free
     envVars:
+      # TEST rejimi: 'staging' — auth_bypass'ga ruxsat beradi (prod'da taqiqlangan).
+      # Real ishga tushirishda 'prod' qiling VA XRAY_AUTH_BYPASS'ni "false" qiling.
       - key: XRAY_ENVIRONMENT
-        value: prod
+        value: staging
       - key: XRAY_HOST
         value: 0.0.0.0
       - key: XRAY_PORT
@@ -33,9 +35,15 @@ services:
       - key: XRAY_AUTH_BYPASS
         value: "true"
 
-      # Database connection (mapped to asyncpg)
+      # Database connection. Render injects the real DSN from the xray-db
+      # database below; ${...} shell interpolation is NOT expanded in a
+      # blueprint `value:`, which is why the old literal DSN failed DNS
+      # resolution. The app rewrites the postgresql:// scheme to
+      # postgresql+asyncpg:// at startup (app/db/session.py).
       - key: XRAY_DB_URL
-        value: postgresql+asyncpg://${DATABASE_USER}:${DATABASE_PASSWORD}@${DATABASE_HOST}/${DATABASE_NAME}
+        fromDatabase:
+          name: xray-db
+          property: connectionString
 
       # VLM / Vast.ai GPU config
       - key: XRAY_VLM_ENABLED
