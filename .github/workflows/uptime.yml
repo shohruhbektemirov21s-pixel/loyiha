@@ -1,0 +1,29 @@
+# ============================================================
+# Uptime probe — Render'dagi jonli backend har 15 daqiqada tekshiriladi.
+# /health yiqilsa workflow ham yiqiladi → GitHub repo egasiga email yuboradi.
+# Tashqi servis talab qilmaydi (UptimeRobot o'rniga minimal yechim).
+# ============================================================
+name: uptime
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch: {}
+
+jobs:
+  health:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Probe /health
+        run: |
+          URL="https://xray-backend-1ki1.onrender.com/health"
+          # Render free plan uxlaydi — cold start uchun 2 urinish, uzun timeout.
+          for attempt in 1 2; do
+            code=$(curl -s -o /tmp/health.json -w '%{http_code}' --max-time 90 "$URL" || echo 000)
+            echo "attempt=$attempt http=$code body=$(cat /tmp/health.json 2>/dev/null | head -c 300)"
+            [ "$code" = "200" ] && exit 0
+            sleep 30
+          done
+          echo "::error::Backend /health $code qaytardi — servis yotgan bo'lishi mumkin"
+          exit 1
