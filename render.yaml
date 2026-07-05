@@ -22,21 +22,22 @@ services:
     startCommand: chmod +x deploy/render_start.sh && ./deploy/render_start.sh
     plan: free
     envVars:
-      # PROD rejimi: auth majburiy. settings.py boot'da tekshiradi —
-      # prod + auth_bypass birga bo'lsa server umuman ko'tarilmaydi.
-      # Kirish uchun Render dashboard'da ADMIN_PASSWORD o'rnatilgan bo'lishi SHART
-      # (render_start.sh birinchi boot'da admin foydalanuvchini yaratadi).
+      # TEST rejimi: 'staging' — auth_bypass'ga ruxsat beradi (prod'da server
+      # umuman ko'tarilmaydi, settings.py boot'da tekshiradi).
+      # REAL ishga tushirishda: XRAY_ENVIRONMENT=prod, XRAY_AUTH_BYPASS=false,
+      # pastda VITE_AUTH_BYPASS=false + Render dashboard'da ADMIN_PASSWORD.
+      # Login kodi to'liq joyida (LoginScreen, /v1/auth/login) — faqat shu
+      # flaglar bilan yoqiladi, kod o'zgarishi kerak emas.
       - key: XRAY_ENVIRONMENT
-        value: prod
+        value: staging
       - key: XRAY_HOST
         value: 0.0.0.0
       - key: XRAY_PORT
         value: 10000
-      # Ochiq internetdagi prod'da OpenAPI docs yopiq (kerak bo'lsa "true" qiling).
       - key: XRAY_ENABLE_DOCS
-        value: "false"
+        value: "true"
       - key: XRAY_AUTH_BYPASS
-        value: "false"
+        value: "true"
 
       # Database connection. Render injects the real DSN from the xray-db
       # database below; ${...} shell interpolation is NOT expanded in a
@@ -107,8 +108,9 @@ services:
     buildCommand: cd console && npm install && npm run build
     staticPublishPath: console/dist
     envVars:
+      # TEST rejimi: login ekranisiz. Real ishga tushirishda "false" qiling.
       - key: VITE_AUTH_BYPASS
-        value: "false"
+        value: "true"
       - key: VITE_MOCK
         value: "false"
       # Backend URL is wired automatically from the xray-backend service's real
