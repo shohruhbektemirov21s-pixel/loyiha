@@ -5,7 +5,7 @@ import type {
   OperatorAnnotation, WsMessage,
 } from "./lib/types";
 import {
-  getScanAudit, /* loadToken, clearToken, AUTH_EXPIRED_EVENT, */ type AuditEntry,
+  getScanAudit, loadToken, clearToken, AUTH_EXPIRED_EVENT, type AuditEntry,
 } from "./lib/api";
 import { IS_MOCK } from "./lib/mock";
 import { useScanQueue } from "./hooks/useScanQueue";
@@ -15,7 +15,7 @@ import { ScanQueue } from "./components/ScanQueue";
 import { VerdictPanel } from "./components/VerdictPanel";
 import { DecisionPanel } from "./components/DecisionPanel";
 import { AuditLog } from "./components/AuditLog";
-// import { LoginScreen } from "./components/LoginScreen";
+import { LoginScreen } from "./components/LoginScreen";
 import { ConnectionStatus } from "./components/ConnectionStatus";
 import { HighRiskBanner, type HighRiskAlert } from "./components/HighRiskBanner";
 import { LiveCamera } from "./components/LiveCamera";
@@ -27,7 +27,7 @@ import {
 
 // Dev/demo bypass — ONLY when explicitly enabled via VITE_AUTH_BYPASS (or mock
 // mode). It is NOT the default; production builds require a real login.
-// const AUTH_BYPASS = import.meta.env.VITE_AUTH_BYPASS === "true" || IS_MOCK;
+const AUTH_BYPASS = import.meta.env.VITE_AUTH_BYPASS === "true" || IS_MOCK;
 
 const BYPASS_AUTH: AuthState = {
   token:      "bypass",
@@ -46,29 +46,25 @@ interface JudgementEntry {
 // Root: owns auth + provides the single shared WebSocket connection.
 // ==================================================================
 export default function App() {
-  // Login parol talabi vaqtincha kamentga olindi (foydalanuvchi so'rovi bo'yicha)
-  const [auth /* , setAuth */] = useState<AuthState | null>(() => {
-    return BYPASS_AUTH;
-    // if (AUTH_BYPASS) return BYPASS_AUTH;
-    // return loadToken() ? { ...BYPASS_AUTH, token: loadToken()! } : null;
+  const [auth, setAuth] = useState<AuthState | null>(() => {
+    if (AUTH_BYPASS) return BYPASS_AUTH;
+    return loadToken() ? { ...BYPASS_AUTH, token: loadToken()! } : null;
   });
 
   useEffect(() => {
-    // const onExpired = () => { if (!AUTH_BYPASS) setAuth(null); };
-    // window.addEventListener(AUTH_EXPIRED_EVENT, onExpired);
-    // return () => window.removeEventListener(AUTH_EXPIRED_EVENT, onExpired);
+    const onExpired = () => { if (!AUTH_BYPASS) setAuth(null); };
+    window.addEventListener(AUTH_EXPIRED_EVENT, onExpired);
+    return () => window.removeEventListener(AUTH_EXPIRED_EVENT, onExpired);
   }, []);
 
-  // LoginScreen (login va parol ekrani) kamentga olindi:
-  // if (!auth) return <LoginScreen onLogin={setAuth} />;
+  if (!auth) return <LoginScreen onLogin={setAuth} />;
 
-  const activeAuth = auth || BYPASS_AUTH;
-  const laneId = activeAuth.laneIds[0] ?? null;
-  const handleLogout = () => { /* clearToken(); if (!AUTH_BYPASS) setAuth(null); */ };
+  const laneId = auth.laneIds[0] ?? null;
+  const handleLogout = () => { clearToken(); if (!AUTH_BYPASS) setAuth(null); };
 
   return (
     <WebSocketProvider laneId={laneId}>
-      <Console auth={activeAuth} onLogout={handleLogout} />
+      <Console auth={auth} onLogout={handleLogout} />
     </WebSocketProvider>
   );
 }
