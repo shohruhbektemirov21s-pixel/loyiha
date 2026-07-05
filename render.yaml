@@ -109,7 +109,4 @@ services:
       # that real host at build time — no hardcoding, no collision.
       # Value is a bare host (no scheme); the frontend prepends https/wss.
       - key: VITE_API_URL
-        fromService:
-          type: web
-          name: xray-backend
-          property: host
+        value: https://xray-backend-1ki1.onrender.com
