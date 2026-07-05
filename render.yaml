@@ -22,18 +22,21 @@ services:
     startCommand: chmod +x deploy/render_start.sh && ./deploy/render_start.sh
     plan: free
     envVars:
-      # TEST rejimi: 'staging' — auth_bypass'ga ruxsat beradi (prod'da taqiqlangan).
-      # Real ishga tushirishda 'prod' qiling VA XRAY_AUTH_BYPASS'ni "false" qiling.
+      # PROD rejimi: auth majburiy. settings.py boot'da tekshiradi —
+      # prod + auth_bypass birga bo'lsa server umuman ko'tarilmaydi.
+      # Kirish uchun Render dashboard'da ADMIN_PASSWORD o'rnatilgan bo'lishi SHART
+      # (render_start.sh birinchi boot'da admin foydalanuvchini yaratadi).
       - key: XRAY_ENVIRONMENT
-        value: staging
+        value: prod
       - key: XRAY_HOST
         value: 0.0.0.0
       - key: XRAY_PORT
         value: 10000
+      # Ochiq internetdagi prod'da OpenAPI docs yopiq (kerak bo'lsa "true" qiling).
       - key: XRAY_ENABLE_DOCS
-        value: "true"
+        value: "false"
       - key: XRAY_AUTH_BYPASS
-        value: "true"
+        value: "false"
 
       # Database connection. Render injects the real DSN from the xray-db
       # database below; ${...} shell interpolation is NOT expanded in a
@@ -63,9 +66,15 @@ services:
       - key: XRAY_VLM_DESCRIBE
         value: "true"
 
-      # CORS (allow all or configure to console url)
-      - key: XRAY_CORS_ALLOW_ORIGINS
-        value: '["*"]'
+      # CORS: wildcard EMAS — faqat alohida static konsolning aniq origin'i.
+      # Backend o'zi ham konsolni same-origin ko'rsatadi (CORS talab qilmaydi);
+      # bu faqat xray-console static sayti uchun. fromService real (suffikslangan)
+      # hostni beradi; app https:// bilan o'zi qo'shadi (app/settings.py).
+      - key: XRAY_CORS_CONSOLE_HOST
+        fromService:
+          type: web
+          name: xray-console
+          property: host
 
       # JWT and Audit secrets (auto-generated)
       - key: XRAY_JWT_SECRET

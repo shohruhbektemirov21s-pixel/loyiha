@@ -124,9 +124,15 @@ class Settings(BaseSettings):
     # OpenAPI docs — on for the internal network; flip off via env in prod if required.
     enable_docs: bool = True
 
-    # CORS: empty => closed. The NiceGUI console is same-origin (also on FastAPI),
-    # so this stays empty unless a separate Vue front-end is deployed later.
+    # CORS: empty => closed. The co-hosted console is same-origin (also on
+    # FastAPI), so this stays empty unless a separate front-end is deployed.
     cors_allow_origins: list[str] = []
+
+    # Separate static-console host (bare host, no scheme). Render injects it via
+    # fromService (which cannot emit a JSON list, hence not cors_allow_origins).
+    # When set, https://<host> is added to the allowed origins — this replaces
+    # the old wildcard '["*"]' deploy config with an exact single origin.
+    cors_console_host: str | None = None
 
     # -- Detector serving (Hop 2) --------------------------------------------
     # OFF by default: on a box without the ML stack (contract/API box) the seam
