@@ -32,7 +32,7 @@ Engineering notes (honest limits of a 4B VLM on single-energy X-ray):
     a supervised model trained on LABELED contraband X-ray data (SIXray/PIDray).
 
 Usage:
-  python xray_cargo_screen.py "/home/kali/Рабочий стол/kas"
+  python scripts/dev/xray_cargo_screen.py "/home/kali/Рабочий стол/kas"
 """
 from __future__ import annotations
 import base64, glob, json, os, sys, time, urllib.request

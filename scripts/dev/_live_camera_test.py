@@ -7,7 +7,7 @@ Bu skript uchta narsani isbotlaydi:
   C) Ollama/Qwen jonli kamera kadrini O'QIB, o'zbekcha javob berishini to'g'ridan-to'g'ri
      ko'rsatadi (detektor darvozasidan mustaqil — "Qwen doimiy tahlil" isboti).
 
-Ishga tushirish:  python _live_camera_test.py
+Ishga tushirish:  python scripts/dev/_live_camera_test.py
 """
 from __future__ import annotations
 
