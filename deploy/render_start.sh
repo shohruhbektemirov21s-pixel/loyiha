@@ -2,63 +2,75 @@
 # ============================================================
 # X-ray Assistant — Render Start Script
 # Avtomatik: Vast.ai GPU yoqish + SSH tunnel + DB + Server
+#
+# Tunnel MANGU emas: Vast instance boot vaqtida hali ko'tarilmagan
+# bo'lishi yoki keyin uzilishi mumkin. Shuning uchun tunnel'ni bir marta
+# ochib qo'ymaymiz — fon'da watchdog uni uzluksiz kuzatib, uzilsa
+# (yoki umuman ochilmagan bo'lsa) Vast'ni qayta yoqib, tunnel'ni tiklaydi.
+# Bu bosqichsiz VLM (rasm "Tahlil") ishlamaydi; watchdog uni o'z-o'zidan
+# tiklaganda operatorga qayta redeploy shart bo'lmaydi.
 # ============================================================
 set -euo pipefail
 
-# ── 1. Vast.ai GPU'ni avtomatik yoqish (API orqali) ──────────
 VAST_API_KEY="${VAST_API_KEY:-}"
 VAST_INSTANCE_ID="${VAST_INSTANCE_ID:-43598057}"
+SSH_HOST="${VAST_SSH_HOST:-ssh5.vast.ai}"
+SSH_PORT="${VAST_SSH_PORT:-38056}"
+MODEL="${XRAY_VLM_MODEL:-qwen3-vl:8b}"
+KEY=~/.ssh/vast_tunnel
+# Watchdog qanchalik tez-tez tekshirsin (soniya).
+TUNNEL_WATCH_INTERVAL="${TUNNEL_WATCH_INTERVAL:-30}"
 
-if [ -n "$VAST_API_KEY" ] && [ -n "$VAST_INSTANCE_ID" ]; then
-    echo "[vast] GPU instance ${VAST_INSTANCE_ID} yoqilmoqda..."
-    
-    # Instance'ni start qilish (REST API)
+# ── Yordamchi: Ollama tunnel orqali javob berayaptimi? ────────
+ollama_reachable() {
+    curl -fsS --max-time 6 http://127.0.0.1:11434/api/version >/dev/null 2>&1
+}
+
+# ── 1. Vast.ai GPU'ni yoqilganiga ishonch hosil qilish ────────
+# API orqali instance'ni 'running' holatiga o'tkazadi va (max 90s) kutadi.
+# Idempotent: allaqachon ishlab tursa, tez qaytadi.
+vast_ensure_running() {
+    [ -n "$VAST_API_KEY" ] && [ -n "$VAST_INSTANCE_ID" ] || {
+        echo "[vast] VAST_API_KEY yoki VAST_INSTANCE_ID sozlanmagan — GPU yoqilmaydi."
+        return 1
+    }
+    echo "[vast] GPU instance ${VAST_INSTANCE_ID} 'running' holatiga o'tkazilmoqda..."
     curl -s -X PUT "https://console.vast.ai/api/v0/instances/${VAST_INSTANCE_ID}/" \
         -H "Authorization: Bearer ${VAST_API_KEY}" \
         -H "Content-Type: application/json" \
-        -d '{"state": "running"}' || echo "[vast] Warning: GPU start so'rovi yuborilmadi"
-    
-    # GPU yuklanishini kutish (max 90 soniya)
-    echo "[vast] GPU yuklanmoqda (max 90s)..."
-    for i in $(seq 1 30); do
+        -d '{"state": "running"}' >/dev/null 2>&1 || echo "[vast] Warning: start so'rovi yuborilmadi"
+
+    for _ in $(seq 1 30); do
         STATUS=$(curl -s "https://console.vast.ai/api/v0/instances/${VAST_INSTANCE_ID}/" \
             -H "Authorization: Bearer ${VAST_API_KEY}" 2>/dev/null \
             | python3 -c "import sys,json; print(json.load(sys.stdin).get('actual_status','unknown'))" 2>/dev/null || echo "unknown")
-        
         if [ "$STATUS" = "running" ]; then
             echo "[vast] ✅ GPU ishlayapti!"
-            break
+            return 0
         fi
         printf "."
         sleep 3
     done
     echo ""
-else
-    echo "[vast] VAST_API_KEY yoki VAST_INSTANCE_ID sozlanmagan. GPU avtomatik yoqilmaydi."
-fi
+    echo "[vast] ⚠️  GPU 90s ichida 'running' bo'lmadi (holat: ${STATUS:-unknown})."
+    return 1
+}
 
-# ── 2. SSH tunnel ochish (Vast.ai GPU'ga) ─────────────────────
-# Render backend Vast GPU'dagi Ollama'ga (11434) SSH tunnel orqali ulanadi.
-# Bu bosqichsiz VLM (rasm "Tahlil") ishlamaydi. Shuning uchun aniq log +
-# ExitOnForwardFailure (jim muvaffaqiyatsizlikni oldini oladi) + keepalive +
-# qayta urinish qo'yildi.
-if [ -n "${SSH_PRIVATE_KEY:-}" ]; then
-    echo "[ssh] SSH key sozlanmoqda..."
-    mkdir -p ~/.ssh
-    KEY=~/.ssh/vast_tunnel
-    # printf key format (oxirgi newline'ni saqlaydi — OpenSSH buni talab qiladi).
-    printf '%s\n' "$SSH_PRIVATE_KEY" > "$KEY"
-    chmod 600 "$KEY"
+# ── 2. Vast box'da ollama'ni ta'minlab, SSH tunnel'ni ochish ──
+# Self-healing: instance qayta yoqilganda 'ollama serve' o'zi qaytmasligi
+# mumkin; kerak bo'lsa remote'da qayta ishga tushiramiz va model yo'q bo'lsa
+# fon'da yuklab olamiz. So'ng lokal 11434 -> remote 11434 tunnel ochamiz.
+tunnel_ensure() {
+    [ -n "${SSH_PRIVATE_KEY:-}" ] || {
+        echo "[ssh] ⚠️  SSH_PRIVATE_KEY sozlanmagan — tunnel yo'q, VLM ishlamaydi." >&2
+        return 1
+    }
+    if [ ! -f "$KEY" ]; then
+        mkdir -p ~/.ssh
+        printf '%s\n' "$SSH_PRIVATE_KEY" > "$KEY"
+        chmod 600 "$KEY"
+    fi
 
-    SSH_HOST="${VAST_SSH_HOST:-ssh5.vast.ai}"
-    SSH_PORT="${VAST_SSH_PORT:-38056}"
-    MODEL="${XRAY_VLM_MODEL:-qwen3-vl:8b}"
-
-    # ── Vast box'da ollama ishlayotganini ta'minlash (self-healing) ──────
-    # Instance to'xtatilib qayta yoqilganda 'ollama serve' o'zi qaytmasligi
-    # mumkin. Tunnel ochishdan oldin box'ga kirib, ollama'ni (kerak bo'lsa)
-    # ishga tushiramiz; model yo'q bo'lsa fon'da yuklab olamiz. Model instance
-    # diskida saqlanadi, shuning uchun odatda faqat 'serve' qayta kerak bo'ladi.
     echo "[ssh] Vast box'da ollama holati tekshirilmoqda..."
     ssh -i "$KEY" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
         -o ConnectTimeout=15 -p "$SSH_PORT" "root@${SSH_HOST}" \
@@ -84,7 +96,6 @@ fi
 REMOTE
 
     echo "[ssh] Tunnel ochilmoqda ${SSH_HOST}:${SSH_PORT} -> ollama:11434 ..."
-    tunnel_up=0
     for attempt in 1 2 3; do
         pkill -f "11434:localhost:11434" 2>/dev/null || true
         # -i: aniq kalit | ExitOnForwardFailure: forward bog'lanmasa darhol xato |
@@ -98,23 +109,49 @@ REMOTE
             && echo "[ssh] tunnel jarayoni fon'ga o'tdi (urinish ${attempt})" \
             || echo "[ssh] urinish ${attempt}: ssh ulanmadi"
         sleep 3
-        if curl -fsS --max-time 6 http://127.0.0.1:11434/api/version >/dev/null 2>&1; then
+        if ollama_reachable; then
             echo "[ssh] ✅ Ollama tunnel ishlayapti (urinish ${attempt})."
-            tunnel_up=1
-            break
+            return 0
         fi
         echo "[ssh] urinish ${attempt}: ollama hali javob bermayapti, qayta urinaman..."
         sleep 3
     done
-    if [ "$tunnel_up" != "1" ]; then
-        echo "[ssh] ⚠️  OGOHLANTIRISH: Ollama tunnel OCHILMADI — VLM (rasm Tahlili) ishlamaydi." >&2
-        echo "[ssh]     Tekshiring: (1) Render'da SSH_PRIVATE_KEY to'g'ri kalitmi," >&2
-        echo "[ssh]     (2) Vast instance ${VAST_INSTANCE_ID:-?} 'running' holatidami," >&2
-        echo "[ssh]     (3) Vast box'da 'ollama serve' ishlab turibdimi." >&2
-    fi
+    echo "[ssh] ⚠️  Tunnel bu urinishda ochilmadi — watchdog qayta urinadi." >&2
+    return 1
+}
+
+# ── Bitta to'liq tiklash sikli: Vast'ni yoqish + tunnel ochish ─
+recover_vlm_link() {
+    vast_ensure_running || true
+    tunnel_ensure || true
+}
+
+# ── Fon watchdog: tunnel'ni uzluksiz tirik ushlab turadi ──────
+# Har TUNNEL_WATCH_INTERVAL soniyada Ollama'ni tekshiradi; javob bermasa
+# to'liq tiklash siklini qayta yuritadi (Vast o'chib qolgan bo'lsa yoqadi,
+# ollama tushib qolgan bo'lsa ko'taradi, tunnel uzilgan bo'lsa qayta ochadi).
+tunnel_watchdog() {
+    while true; do
+        sleep "$TUNNEL_WATCH_INTERVAL"
+        if ! ollama_reachable; then
+            echo "[watchdog] Ollama tunnel javob bermayapti — tiklanmoqda..." >&2
+            recover_vlm_link
+        fi
+    done
+}
+
+# ── Boot: bir marta tiklash + doimiy watchdog'ni fon'ga qo'yish ─
+recover_vlm_link
+if ollama_reachable; then
+    echo "[ssh] ✅ VLM link boot'da tayyor."
 else
-    echo "[ssh] ⚠️  SSH_PRIVATE_KEY sozlanmagan — Vast ollama tunnel yo'q, VLM ishlamaydi." >&2
+    echo "[ssh] ⚠️  OGOHLANTIRISH: VLM link boot'da ochilmadi — watchdog fon'da tiklashga urinadi." >&2
+    echo "[ssh]     Tekshiring: (1) Render'da SSH_PRIVATE_KEY to'g'ri kalitmi," >&2
+    echo "[ssh]     (2) Vast instance ${VAST_INSTANCE_ID:-?} 'running' holatidami," >&2
+    echo "[ssh]     (3) VAST_API_KEY to'g'rimi (auto-start shu bilan ishlaydi)." >&2
 fi
+tunnel_watchdog &
+echo "[watchdog] Tunnel watchdog fon'da ishga tushdi (har ${TUNNEL_WATCH_INTERVAL}s)."
 
 # ── 3. Database migratsiyalari ────────────────────────────────
 # Migratsiya MAJBURIY: schema yaratilmasa ilova ishlamaydi, shuning uchun
