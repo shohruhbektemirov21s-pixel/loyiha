@@ -29,6 +29,11 @@ import {
 // mode). It is NOT the default; production builds require a real login.
 const AUTH_BYPASS = import.meta.env.VITE_AUTH_BYPASS === "true" || IS_MOCK;
 
+// A physical USB camera exists on this deploy unless explicitly disabled. The
+// cloud host has no camera, so its build sets VITE_ENABLE_CAMERA=false: the
+// console then hides all camera capture UI and defaults to image upload.
+const CAMERA_ENABLED = import.meta.env.VITE_ENABLE_CAMERA !== "false";
+
 const BYPASS_AUTH: AuthState = {
   token:      "bypass",
   operatorId: "e18dd952-0e93-4bef-8dbe-2694ccd6d66c",
@@ -82,7 +87,7 @@ function Console({ auth, onLogout }: { auth: AuthState; onLogout: () => void }) 
   const [highAlert, setHighAlert]     = useState<HighRiskAlert | null>(null);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [srAlert, setSrAlert]         = useState("");
-  const [acqMode, setAcqMode]         = useState<"camera" | "upload">("camera");
+  const [acqMode, setAcqMode]         = useState<"camera" | "upload">(CAMERA_ENABLED ? "camera" : "upload");
 
   const mainRef    = useRef<HTMLElement>(null);
   const srTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -97,7 +102,7 @@ function Console({ auth, onLogout }: { auth: AuthState; onLogout: () => void }) 
     setJudgements({});
     setAnnotations([]);
     setShowAudit(false);
-    setAcqMode("camera");
+    setAcqMode(CAMERA_ENABLED ? "camera" : "upload");
   }, []);
 
   useEffect(() => { if (scan && !sLoading) mainRef.current?.focus(); }, [scan, sLoading]);
@@ -220,6 +225,7 @@ function Console({ auth, onLogout }: { auth: AuthState; onLogout: () => void }) 
           onRefresh={refresh}
           acqMode={acqMode}
           onModeChange={setAcqMode}
+          cameraEnabled={CAMERA_ENABLED}
         />
 
         {/* Center */}

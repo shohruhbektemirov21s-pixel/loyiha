@@ -113,6 +113,11 @@ services:
         value: "true"
       - key: VITE_MOCK
         value: "false"
+      # Cloud hostda jismoniy kamera yo'q — jonli kamera UI'si (Rentgen ko'rish +
+      # Kamera/Rasm tanlagich) yashiriladi, faqat "Rasm yuklash" qoladi. On-prem
+      # (kamerali) deploy'da bu "true" bo'ladi yoki umuman qo'yilmaydi.
+      - key: VITE_ENABLE_CAMERA
+        value: "false"
       # Backend URL is wired automatically from the xray-backend service's real
       # host. The literal `xray-backend.onrender.com` subdomain is GLOBALLY
       # taken by another Render account, so our backend actually gets a

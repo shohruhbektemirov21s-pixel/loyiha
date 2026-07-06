@@ -48,10 +48,14 @@ interface Props {
   onRefresh:    () => void;
   acqMode:      "camera" | "upload";
   onModeChange: (m: "camera" | "upload") => void;
+  // When false (e.g. the cloud deploy has no USB camera) the live-camera
+  // capture button and the camera/upload toggle are hidden — upload only.
+  cameraEnabled?: boolean;
 }
 
 export function ScanQueue({
   scans, loading, error, selectedId, onSelect, onRefresh, acqMode, onModeChange,
+  cameraEnabled = true,
 }: Props) {
   const [filter, setFilter] = useState<Filter>("open");
   const [capturing, setCapturing] = useState(false);
@@ -136,39 +140,44 @@ export function ScanQueue({
           </button>
         </div>
 
-        {/* Take X-ray (camera capture) */}
-        <button
-          onClick={handleCapture}
-          disabled={capturing}
-          aria-busy={capturing}
-          className="press"
-          style={{
-            width: "100%", padding: 11, border: "none", borderRadius: 10,
-            fontSize: 13.5, fontWeight: 600, cursor: capturing ? "wait" : "pointer",
-            color: "#052e2b", background: "linear-gradient(135deg,#2dd4bf,#0d9488)",
-            boxShadow: "0 8px 20px rgba(20,184,166,0.3)",
-            display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-            opacity: capturing ? 0.8 : 1,
-          }}
-        >
-          {capturing
-            ? <><Loader2 size={16} className="animate-spin" aria-hidden="true" />{CAPTURE_WORKING}</>
-            : <><ScanLine size={16} aria-hidden="true" />Rentgen ko'rish</>}
-        </button>
-        {captureError && (
+        {/* Take X-ray (camera capture) — only when a physical camera exists */}
+        {cameraEnabled && (
+          <button
+            onClick={handleCapture}
+            disabled={capturing}
+            aria-busy={capturing}
+            className="press"
+            style={{
+              width: "100%", padding: 11, border: "none", borderRadius: 10,
+              fontSize: 13.5, fontWeight: 600, cursor: capturing ? "wait" : "pointer",
+              color: "#052e2b", background: "linear-gradient(135deg,#2dd4bf,#0d9488)",
+              boxShadow: "0 8px 20px rgba(20,184,166,0.3)",
+              display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+              opacity: capturing ? 0.8 : 1,
+            }}
+          >
+            {capturing
+              ? <><Loader2 size={16} className="animate-spin" aria-hidden="true" />{CAPTURE_WORKING}</>
+              : <><ScanLine size={16} aria-hidden="true" />Rentgen ko'rish</>}
+          </button>
+        )}
+        {cameraEnabled && captureError && (
           <p style={{ fontSize: 12, color: "#fca5a5" }} role="alert">{captureError}</p>
         )}
 
-        {/* Acquisition mode: camera ⇄ upload */}
-        <div role="tablist" aria-label="Tasvir manbasi"
-          style={{ display: "flex", gap: 6, padding: 4, borderRadius: 11, background: "rgba(0,0,0,0.22)" }}>
-          <div role="tab" aria-selected={acqMode === "camera"} onClick={() => onModeChange("camera")} style={modeBtn(acqMode === "camera")}>
-            <Video size={15} aria-hidden="true" />Kamera
+        {/* Acquisition mode: camera ⇄ upload. Hidden when there is no camera —
+            the only source is upload, so the toggle would be a dead control. */}
+        {cameraEnabled && (
+          <div role="tablist" aria-label="Tasvir manbasi"
+            style={{ display: "flex", gap: 6, padding: 4, borderRadius: 11, background: "rgba(0,0,0,0.22)" }}>
+            <div role="tab" aria-selected={acqMode === "camera"} onClick={() => onModeChange("camera")} style={modeBtn(acqMode === "camera")}>
+              <Video size={15} aria-hidden="true" />Kamera
+            </div>
+            <div role="tab" aria-selected={acqMode === "upload"} onClick={() => onModeChange("upload")} style={modeBtn(acqMode === "upload")}>
+              <ImageUp size={15} aria-hidden="true" />Rasm yuklash
+            </div>
           </div>
-          <div role="tab" aria-selected={acqMode === "upload"} onClick={() => onModeChange("upload")} style={modeBtn(acqMode === "upload")}>
-            <ImageUp size={15} aria-hidden="true" />Rasm yuklash
-          </div>
-        </div>
+        )}
 
         {/* Filter tabs with counts */}
         <div style={{ display: "flex", gap: 3 }}>
