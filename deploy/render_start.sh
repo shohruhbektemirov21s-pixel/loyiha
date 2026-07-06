@@ -26,8 +26,33 @@ ollama_reachable() {
     curl -fsS --max-time 6 http://127.0.0.1:11434/api/version >/dev/null 2>&1
 }
 
+# ── Vast API'dan instance'ni bir marta so'rab, "status|ssh_host|ssh_port" ─
+# qaytaradi. SSH endpoint MUHIM: Vast instance to'xtatilib qayta yoqilganda
+# ssh_host/ssh_port O'ZGARADI — shuning uchun uni qattiq yozib qo'ymay, har
+# safar API'dan o'qiymiz (aks holda eski endpoint'ga ulanib tunnel yiqiladi).
+vast_query() {
+    curl -s "https://console.vast.ai/api/v0/instances/${VAST_INSTANCE_ID}/" \
+        -H "Authorization: Bearer ${VAST_API_KEY}" 2>/dev/null \
+        | python3 -c '
+import sys, json
+try:
+    d = json.load(sys.stdin)
+except Exception:
+    print("unknown||"); sys.exit(0)
+# Javob root da yoki {"instances": {...}} ichida bo\x27lishi mumkin.
+inst = d.get("instances", d) if isinstance(d, dict) else {}
+if isinstance(inst, list):
+    inst = inst[0] if inst else {}
+status = inst.get("actual_status", "unknown")
+host = inst.get("ssh_host", "") or ""
+port = inst.get("ssh_port", "") or ""
+print(f"{status}|{host}|{port}")
+' 2>/dev/null || echo "unknown||"
+}
+
 # ── 1. Vast.ai GPU'ni yoqilganiga ishonch hosil qilish ────────
 # API orqali instance'ni 'running' holatiga o'tkazadi va (max 90s) kutadi.
+# Running bo'lgach, joriy SSH endpoint'ni (host/port) global'ga yozadi.
 # Idempotent: allaqachon ishlab tursa, tez qaytadi.
 vast_ensure_running() {
     [ -n "$VAST_API_KEY" ] && [ -n "$VAST_INSTANCE_ID" ] || {
@@ -41,11 +66,12 @@ vast_ensure_running() {
         -d '{"state": "running"}' >/dev/null 2>&1 || echo "[vast] Warning: start so'rovi yuborilmadi"
 
     for _ in $(seq 1 30); do
-        STATUS=$(curl -s "https://console.vast.ai/api/v0/instances/${VAST_INSTANCE_ID}/" \
-            -H "Authorization: Bearer ${VAST_API_KEY}" 2>/dev/null \
-            | python3 -c "import sys,json; print(json.load(sys.stdin).get('actual_status','unknown'))" 2>/dev/null || echo "unknown")
+        IFS='|' read -r STATUS API_HOST API_PORT <<< "$(vast_query)" || true
         if [ "$STATUS" = "running" ]; then
-            echo "[vast] ✅ GPU ishlayapti!"
+            # API bergan joriy endpoint'ni ishlatamiz (o'zgargan bo'lishi mumkin).
+            [ -n "$API_HOST" ] && SSH_HOST="$API_HOST"
+            [ -n "$API_PORT" ] && SSH_PORT="$API_PORT"
+            echo "[vast] ✅ GPU ishlayapti! SSH endpoint: ${SSH_HOST}:${SSH_PORT}"
             return 0
         fi
         printf "."
